@@ -1,0 +1,13 @@
+.git
+**/node_modules
+**/.env
+**/.env.*
+**/.test-run
+**/.test-postgres
+**/dist
+**/build
+glance-app
+glance-master
+glance-slave
+glance-prototype
+.scratch

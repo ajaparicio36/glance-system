@@ -1,0 +1,13 @@
+node_modules/
+.env
+.env.*
+!.env.example
+dist/
+build/
+.expo/
+.test-postgres/
+glance-server/.test-run/
+**/firmware.local.h
+**/config.local.h
+**/secrets.h
+*.tsbuildinfo

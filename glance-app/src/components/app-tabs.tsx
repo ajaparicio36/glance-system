@@ -1,32 +1,12 @@
 import { NativeTabs } from 'expo-router/unstable-native-tabs';
-import { useColorScheme } from 'react-native';
+import { useFont, usePalette } from './tracking-ui';
 
-import { Colors } from '@/constants/theme';
-
-export default function AppTabs() {
-  const scheme = useColorScheme();
-  const colors = Colors[scheme === 'unspecified' ? 'light' : scheme];
-
-  return (
-    <NativeTabs
-      backgroundColor={colors.background}
-      indicatorColor={colors.backgroundElement}
-      labelStyle={{ selected: { color: colors.text } }}>
-      <NativeTabs.Trigger name="index">
-        <NativeTabs.Trigger.Label>Home</NativeTabs.Trigger.Label>
-        <NativeTabs.Trigger.Icon
-          src={require('@/assets/images/tabIcons/home.png')}
-          renderingMode="template"
-        />
-      </NativeTabs.Trigger>
-
-      <NativeTabs.Trigger name="explore">
-        <NativeTabs.Trigger.Label>Explore</NativeTabs.Trigger.Label>
-        <NativeTabs.Trigger.Icon
-          src={require('@/assets/images/tabIcons/explore.png')}
-          renderingMode="template"
-        />
-      </NativeTabs.Trigger>
-    </NativeTabs>
-  );
+export default function AppTabs(): React.JSX.Element {
+  const colors = usePalette();
+  const fontFamily = useFont(false, 'medium');
+  return <NativeTabs backgroundColor={colors.background} tintColor={colors.foreground}
+    labelStyle={{ fontFamily, fontSize: 14, color: colors.foreground }}>
+    <NativeTabs.Trigger name="index"><NativeTabs.Trigger.Label>Map</NativeTabs.Trigger.Label></NativeTabs.Trigger>
+    <NativeTabs.Trigger name="explore"><NativeTabs.Trigger.Label>Setup</NativeTabs.Trigger.Label></NativeTabs.Trigger>
+  </NativeTabs>;
 }

@@ -1,0 +1,106 @@
+import assert from 'node:assert/strict';
+import { mkdirSync, unlinkSync } from 'node:fs';
+import { createServer } from 'node:http';
+import { DatabaseSync } from 'node:sqlite';
+import { drizzle } from 'drizzle-orm/node-sqlite';
+import { eq } from 'drizzle-orm';
+import { cacheMigration, snapshotCache } from '../src/db/schema.ts';
+import { cacheWrite } from '../src/db/cache-query.ts';
+import { acceptsSnapshot, collectAlerts, normalizeSettings, parseCache, safetyLabel } from '../src/tracking/policy.ts';
+import { FenceConflict, liveUrl, requestSnapshot, updateFence } from '../src/tracking/network.ts';
+import { palettes } from '../src/tracking/colors.ts';
+import { parseSnapshot } from '../../shared/protocol.ts';
+import { validatePolygon } from '../../shared/geofence.ts';
+
+const time = '2026-10-03T00:00:00.000Z';
+const vertices = [{ latitude: 11, longitude: 124 }, { latitude: 11, longitude: 125 }, { latitude: 12, longitude: 125 }];
+const empty = parseSnapshot({ revision: 0, serverTime: time, geofence: null, devices: [{ deviceId: 'prototype-001', location: null, boundaryStatus: 'unknown', activeViolationId: null }], incidents: [] });
+const located = parseSnapshot({ ...empty, revision: 2, geofence: { version: 1, vertices, updatedAt: time }, devices: [{ deviceId: 'prototype-001', location: { latitude: 11.1, longitude: 124.2, observedAt: time, receivedAt: time }, boundaryStatus: 'inside', activeViolationId: null }] });
+assert.equal(acceptsSnapshot(located, empty), false);
+assert.equal(acceptsSnapshot(located, located), false);
+assert.equal(acceptsSnapshot(located, { ...located, serverTime: '2026-10-03T00:00:01.000Z' }), true);
+assert.equal(acceptsSnapshot(located, { ...located, serverTime: '2026-10-02T23:59:59.000Z' }), false);
+assert.throws(() => parseCache(JSON.stringify({ ...empty, devices: [{ ...empty.devices[0], boundaryStatus: 'returned' }] }), 1));
+assert.equal(safetyLabel(located.devices[0], { snapshot: located, savedAt: 1000 }, 15999, true), 'Inside geofence');
+assert.equal(safetyLabel(located.devices[0], { snapshot: located, savedAt: 1000 }, 16000, true), 'Unknown · stale location');
+assert.equal(safetyLabel(located.devices[0], { snapshot: located, savedAt: 1000 }, 1000, false), 'Unknown · disconnected');
+const delayed = { ...located.devices[0], location: { ...located.devices[0].location, observedAt: '2026-10-02T23:59:45.000Z' } };
+assert.equal(safetyLabel(delayed, { snapshot: located, savedAt: 1000 }, 1000, true), 'Unknown · stale location');
+const future = { ...located.devices[0], location: { ...located.devices[0].location, observedAt: '2026-10-03T00:00:05.000Z' } };
+assert.equal(safetyLabel(future, { snapshot: located, savedAt: 1000 }, 16000, true), 'Unknown · stale location');
+assert.equal(validatePolygon([{ latitude: NaN, longitude: 0 }, ...vertices]).valid, false);
+assert.equal(validatePolygon([{ latitude: 11, longitude: 124 }, { latitude: 12, longitude: 125 }, { latitude: 11, longitude: 125 }, { latitude: 12, longitude: 124 }]).valid, false);
+const incident = { id: 1, deviceId: 'prototype-001', outside: { latitude: 13, longitude: 124, observedAt: time }, resolution: null, resolvedAt: null, returnPosition: null };
+const outside = { ...located, revision: 3, devices: [{ ...located.devices[0], boundaryStatus: 'outside', activeViolationId: 1 }], incidents: [incident] };
+const seen = new Set();
+assert.deepEqual(collectAlerts(empty, seen, true), []);
+assert.equal(collectAlerts(outside, seen, false).length, 1);
+assert.deepEqual(collectAlerts(outside, seen, false), []);
+const returned = { ...located, revision: 4, incidents: [{ ...incident, resolution: 'returned', resolvedAt: time, returnPosition: incident.outside }] };
+assert.match(collectAlerts(returned, seen, false)[0], /returned inside/);
+assert.deepEqual(collectAlerts(returned, seen, false), []);
+assert.deepEqual(collectAlerts(outside, new Set(), true), []);
+assert.match(collectAlerts({ ...located, incidents: [{ ...incident, id: 2, resolution: 'fence_changed', resolvedAt: time }] }, seen, false).at(-1), /fence changed/);
+assert.throws(() => normalizeSettings({ serverUrl: 'http://public.example', ownerToken: 'synthetic-owner' }, null, 'android'));
+assert.throws(() => normalizeSettings({ serverUrl: 'https://example.com?token=secret', ownerToken: 'synthetic-owner' }, null, 'android'));
+assert.throws(() => normalizeSettings({ serverUrl: 'http://192.168.1.2', ownerToken: 'synthetic-owner' }, '192.168.1.2', 'ios'));
+assert.equal(normalizeSettings({ serverUrl: 'http://192.168.1.2:3000', ownerToken: 'synthetic-owner' }, '192.168.1.2', 'android').serverUrl, 'http://192.168.1.2:3000');
+assert.equal(liveUrl({ serverUrl: 'https://example.com', ownerToken: 'synthetic-owner' }), 'wss://example.com/api/live');
+
+function luminance(hex) {
+  const channels = [1, 3, 5].map(offset => Number.parseInt(hex.slice(offset, offset + 2), 16) / 255).map(channel => channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4);
+  return channels[0] * 0.2126 + channels[1] * 0.7152 + channels[2] * 0.0722;
+}
+for (const palette of Object.values(palettes)) {
+  for (const background of ['background', 'card']) {
+    const foreground = luminance(palette['muted-foreground']);
+    const surface = luminance(palette[background]);
+    assert.ok((Math.max(foreground, surface) + 0.05) / (Math.min(foreground, surface) + 0.05) >= 4.5);
+  }
+}
+
+mkdirSync(new URL('../dist/', import.meta.url), { recursive: true });
+const databasePath = new URL('../dist/cache-check.sqlite', import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1');
+let sqlite = new DatabaseSync(databasePath);
+sqlite.exec(cacheMigration);
+let database = drizzle({ client: sqlite });
+const row = { scope: 'synthetic-server-owner-scope', revision: located.revision, serverTime: located.serverTime, savedAt: 1000, payload: JSON.stringify(located) };
+await cacheWrite(database, row);
+await cacheWrite(database, { ...row, revision: 0, payload: JSON.stringify(empty), savedAt: 2000 });
+await cacheWrite(database, { ...row, savedAt: 999, payload: 'older asynchronous write' });
+await cacheWrite(database, { ...row, savedAt: 3000, payload: 'duplicate timestamp must not reset freshness' });
+await cacheWrite(database, { ...row, scope: 'other-owner', revision: 0, payload: JSON.stringify(empty) });
+sqlite.close();
+sqlite = new DatabaseSync(databasePath);
+database = drizzle({ client: sqlite });
+const cached = await database.select().from(snapshotCache).where(eq(snapshotCache.scope, row.scope));
+assert.equal(parseCache(cached[0].payload, cached[0].savedAt).snapshot.revision, 2);
+assert.equal(cached[0].savedAt, 1000);
+const duplicateRetained = parseCache(cached[0].payload, cached[0].savedAt);
+assert.equal(safetyLabel(duplicateRetained.snapshot.devices[0], duplicateRetained, 16000, true), 'Unknown · stale location');
+assert.equal((await database.select().from(snapshotCache).where(eq(snapshotCache.scope, 'other-owner')))[0].revision, 0);
+sqlite.close();
+unlinkSync(databasePath);
+
+let responseSnapshot = located;
+const server = createServer(async (request, response) => {
+  assert.equal(request.headers.authorization, 'Bearer synthetic-owner');
+  if (request.method === 'PUT') {
+    let body = '';
+    for await (const chunk of request) body += chunk;
+    const payload = JSON.parse(body);
+    assert.deepEqual(payload.vertices, vertices);
+    if (payload.expectedVersion !== 1) { response.writeHead(409); response.end(); return; }
+    responseSnapshot = { ...located, revision: 3, geofence: { ...located.geofence, version: 2 } };
+  }
+  response.setHeader('Content-Type', 'application/json');
+  response.end(JSON.stringify(responseSnapshot));
+});
+await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+try {
+  const settings = { serverUrl: `http://127.0.0.1:${server.address().port}`, ownerToken: 'synthetic-owner' };
+  assert.equal((await requestSnapshot(settings)).revision, 2);
+  await assert.rejects(updateFence(settings, vertices, 0), FenceConflict);
+  assert.equal((await updateFence(settings, vertices, 1)).geofence.version, 2);
+} finally { await new Promise(resolve => server.close(resolve)); }
+console.log('PASS: strict cache parsing, monotonic durable Drizzle SQLite writes, server/owner isolation, freshness, alert dedup/baselines, polygon validation, contrast, HTTPS policy, HTTP bearer/version/conflict client contract (synthetic local fixture).');

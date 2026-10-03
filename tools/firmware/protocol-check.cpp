@@ -1,0 +1,86 @@
+#include "GlanceProtocol.h"
+#include <cassert>
+#include <iostream>
+#include <limits>
+
+int main() {
+  char validRmc[] = "$GPRMC,030405.00,A,1435.9700,N,12059.0520,E,0.0,0.0,041026,,,A*00";
+  assert(glance::completeRmc(validRmc));
+  char inactiveRmc[] = "$GPRMC,030405.00,V,1435.9700,N,12059.0520,E,0.0,0.0,041026,,,A*00";
+  assert(!glance::completeRmc(inactiveRmc));
+  char missingCoordinate[] = "$GPRMC,030405.00,A,,N,12059.0520,E,0.0,0.0,041026,,,A*00";
+  assert(!glance::completeRmc(missingCoordinate));
+  char missingDate[] = "$GPRMC,030405.00,A,1435.9700,N,12059.0520,E,0.0,0.0,,,,A*00";
+  assert(!glance::completeRmc(missingDate));
+  char invalidTime[] = "$GPRMC,0304x5.00,A,1435.9700,N,12059.0520,E,0.0,0.0,041026,,,A*00";
+  assert(!glance::completeRmc(invalidTime));
+  char ggaOnly[] = "$GPGGA,030405.00,1435.9700,N,12059.0520,E,1,05,1.2,0.0,M,0.0,M,,*00";
+  assert(!glance::completeRmc(ggaOnly));
+  assert(!glance::coordinateField("1460.0000", 2));
+  assert(!glance::coordinateField("14xx.0000", 2));
+  assert(!glance::coordinateField("1435.", 2));
+  glance::Observation observation;
+  strcpy(observation.deviceId, "slave-01");
+  strcpy(observation.observedAt, "2026-10-04T03:04:05.000Z");
+  observation.latitude = 14.5995;
+  observation.longitude = 120.9842;
+  observation.receivedAtMs = 100;
+  assert(glance::validObservation(observation));
+  assert(glance::timestampSeconds("2024-01-01T00:00:00.000Z") == 1704067200);
+  assert(glance::timestampSeconds("2024-03-01T00:00:00.000Z") - glance::timestampSeconds("2024-02-28T00:00:00.000Z") == 172800);
+  assert(glance::timestampMilliseconds("1970-01-01T00:00:00.123Z") == 123);
+  assert(glance::timestampMilliseconds("1969-12-31T23:59:59.999Z") == -1);
+  assert(glance::timestampMilliseconds("0000-01-01T00:00:00.000Z") == -62167219200000LL);
+  assert(glance::validTimestamp("2024-02-29T23:59:59.999Z"));
+  assert(!glance::validTimestamp("2025-02-29T00:00:00.000Z"));
+  assert(!glance::validTimestamp("2026-13-01T00:00:00.000Z"));
+  assert(!glance::validTimestamp("2026-10-04T24:00:00.000Z"));
+  assert(!glance::validTimestamp("2026-10-04T03:04:60.000Z"));
+  assert(!glance::validTimestamp("2026-10-04T03:04:05+00:00"));
+  assert(!glance::validTimestamp("2026-10-04T03:04:05Z"));
+  assert(!glance::validTimestamp("2026-10-04T03:04:05.00Z"));
+  assert(!glance::validTimestamp("2026-10-04T03:04:05.x00Z"));
+  assert(!glance::validDeviceId("slave/01"));
+  assert(!glance::validDeviceId(""));
+  assert(glance::validDeviceId("slave.01-test_v1"));
+  assert(!glance::validDeviceId("-slave"));
+  assert(!glance::validDeviceId("_slave"));
+  char maxDeviceId[66];
+  memset(maxDeviceId, 'a', 64);
+  maxDeviceId[64] = '\0';
+  assert(glance::validDeviceId(maxDeviceId));
+  maxDeviceId[64] = 'a';
+  maxDeviceId[65] = '\0';
+  assert(!glance::validDeviceId(maxDeviceId));
+  assert(glance::newerThan(observation, "2026-10-04T03:04:04.999Z"));
+  assert(!glance::newerThan(observation, observation.observedAt));
+  assert(!glance::newerThan(observation, "2026-10-04T03:04:05.001Z"));
+  assert(glance::acceptableAge(-5000));
+  assert(!glance::acceptableAge(-5001));
+  assert(glance::acceptableAge(14999));
+  assert(!glance::acceptableAge(15000));
+  assert(glance::fresh(observation, 15099));
+  assert(!glance::fresh(observation, 15100));
+  const int64_t observedEpochMs = glance::timestampMilliseconds(observation.observedAt);
+  assert(glance::freshAt(observation, 100, observedEpochMs + 14999));
+  assert(!glance::freshAt(observation, 100, observedEpochMs + 15000));
+  assert(!glance::freshAt(observation, 15100, observedEpochMs));
+  assert(glance::freshAt(observation, 100, observedEpochMs - 5000));
+  assert(!glance::freshAt(observation, 100, observedEpochMs - 5001));
+  observation.receivedAtMs = UINT32_MAX - 10;
+  assert(glance::fresh(observation, 20));
+  observation.latitude = std::numeric_limits<double>::quiet_NaN();
+  assert(!glance::validObservation(observation));
+  observation.latitude = 91;
+  assert(!glance::validObservation(observation));
+  uint8_t expected[glance::tagBytes] = {};
+  uint8_t received[glance::tagBytes] = {};
+  assert(glance::equalTag(expected, received));
+  received[31] = 1;
+  assert(!glance::equalTag(expected, received));
+  assert(glance::validFrameSize(glance::maxFrameBytes, 1));
+  assert(!glance::validFrameSize(glance::maxFrameBytes + 1, 1));
+  assert(!glance::validFrameSize(33, 1));
+  assert(!glance::validFrameSize(100, 2));
+  std::cout << "Glance protocol checks passed\n";
+}

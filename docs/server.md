@@ -108,6 +108,27 @@ The built-in Node check exercises real HTTP listeners and two independent Drizzl
 
 ### Verification on 3 October 2026
 
-`pnpm check` and real PostgreSQL/HTTP/WS integration passed. Docker Desktop was started using `docker desktop start --detach --timeout 120`, but its backend crashed initializing the `dockerInference` listener (`The file cannot be accessed by the system`); its WSL engine remained stopped. No factory reset, socket deletion or unrelated service changes were attempted. Both Compose files passed `docker compose -f <file> config --quiet`; image build/container runtime remain **unverified** without a working daemon.
+Historical first run: strict TypeScript and two real PostgreSQL/HTTP/WS tests passed against an isolated native PostgreSQL 18.4 cluster under ignored `glance-server/.test-run/`. That cluster was stopped. Docker Desktop then failed initializing `dockerInference`; no factory reset, socket deletion or unrelated service repair was attempted. The user subsequently repaired Docker. The earlier Docker failure is **not a current blocker**.
 
-To avoid claiming simulated database coverage, an isolated native PostgreSQL 18.4 binary distribution from the npm `@embedded-postgres/windows-x64` package was downloaded under ignored `glance-server/.test-run/`, initialized as a separate temporary cluster, and bound only to `127.0.0.1` on an ephemeral port. No existing PostgreSQL service/database was used. Exact test commands and final cleanup are reported with the task result. Docker uses PostgreSQL 16; its image and exact-version execution still need verification when Docker is repaired.
+Actual Docker verification now passes with Docker 29.2.0, PostgreSQL **16.14** from `postgres:16-alpine`, and production Node **24.13.0**:
+
+- Development Compose contains only `db`, starts healthy, publishes PostgreSQL exclusively to an ephemeral loopback port, and mounts its project-specific persistent volume.
+- The unchanged integration suite ran against a newly created `glance_test_docker_fb36c3b4` database: **2 passed, 0 failed**, total **31434.6967ms**. The first test exercises real PostgreSQL/HTTP/WS; the second checks configuration. Strict TypeScript passed.
+- The actual production Dockerfile built using `pnpm install --prod --frozen-lockfile`, including the root-context shared modules. Production Compose started both services healthy. Inspection proved UID 1000/nonroot, read-only root filesystem, `CapDrop=[ALL]`, `no-new-privileges:true`, a persistent database volume, and no published database port.
+- A disposable TLS reverse proxy on the production project's private network was the exact configured `TRUSTED_PROXY`. Node clients added its generated test CA to the normal trust store using `NODE_EXTRA_CA_CERTS`, with no TLS-verification bypass inherited. Real HTTPS/WSS passed owner/device authorization, invalid input, initial/repeated outside, inclusive-edge return, fence version conflict/replacement, duplicate/order/age/skew rejection, stale preservation, WebSocket preauth silence/deadline, update and reconnect. Direct HTTP and spoofed forwarded headers from an untrusted peer were rejected. Without the test CA, the client failed with a TLS certificate error.
+- Stopping the owned production server/database produced server exit code 0. Starting both again restored healthy services and exactly preserved revision, fence, last location and incident projection, excluding the deliberately refreshed serverTime. Server logs contained none of the disposable credentials.
+
+The isolation correction was verified by rerunning with deliberately conflicting inherited DATABASE_URL, tokens, identity, ports and TRUSTED_PROXY. The temporary runner passes `{env:{...process.env,...values}}` to every Compose invocation so generated values override the shell; `--env-file` alone would not do that. It removes `NODE_TLS_REJECT_UNAUTHORIZED` from both trusted and untrusted TLS client environments. No existing database was accessed.
+
+Exact commands and sanitized results are retained locally in ignored `glance-server/.test-run/docker-fb36c3b4/evidence.log`; the two-test output is `postgres16-tests.log`, and runtime/image/port/isolation metadata is `summary.json`. The temporary orchestration and TLS proxy scripts remain under ignored `glance-server/.test-run/`; no new production code, dependency, or committed harness was needed. The local verification invocation was:
+
+```powershell
+$env:OPENSSL_EXECUTABLE = 'C:/Program Files/Git/usr/bin/openssl.exe'
+node glance-server/.test-run/docker-runtime.mjs
+```
+
+That script reused `node node_modules/typescript/bin/tsc --noEmit` and `node --test test/integration.test.ts` from `glance-server`, then invoked `docker compose --project-name <unique-name> --env-file <ignored-file> -f <dev-or-prod-file> config --quiet`, development `up -d --wait`, production `build server` and `up -d --wait`, scoped `stop server db`, and a second production `up -d --wait`. The normal `pnpm check`/`pnpm test` commands still use the same existing checks.
+
+Only verification resources were removed: projects `glance-verify-dev-fb36c3b4` / `glance-verify-prod-fb36c3b4`, their volumes/networks/containers, and `glance-verify-prod-fb36c3b4-tls-proxy`. Earlier `bfda5de6` and `c3d2f2a0` verification projects were also cleaned. Images/build cache and ignored evidence were retained. The six unrelated `falsisters-pos-dev-*` containers kept identical IDs, running state, start times and restart counts before/after all checks. No daemon restart, prune, reset or unrelated configuration change occurred.
+
+These are synthetic software fixtures, not live GPS/native/hardware evidence. A generated local test CA proves the tested transport and proxy trust boundary, **not** real cloud hostname/certificate provisioning, a deployment's actual proxy configuration, mobile certificate behavior or firmware TLS. Those deployment-specific and native/hardware checks remain outstanding.

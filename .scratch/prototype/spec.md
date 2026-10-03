@@ -1,6 +1,6 @@
 # Monday GPS/WiFi prototype
 
-Status: ready-for-agent
+Status: ready-for-human
 
 ## Accepted scope
 
@@ -8,7 +8,7 @@ Live GPS and server-authoritative polygon violation/return reporting on October 
 
 Accepted decisions: docs/adr/0001 through 0004. Exact API: docs/protocol.md; shared implementation: shared/protocol.ts, shared/geofence.ts, shared/lifecycle.ts. Cadence 5 seconds, stale 15 seconds, last-location plus episode history only, foreground alerts only, device-upload and owner-read/edit credentials. Boundary inside; initial outside opens one episode; repeated outside deduplicates; inside returns; replacement closes fence_changed and waits for next fresh fix.
 
-## Acceptance evidence
+## Acceptance criteria
 
 - Shared: direct Node 24 polygon/lifecycle/parser/freshness check and TypeScript static check.
 - Server: authenticated HTTP/WebSocket contract, database transactions/version conflict and episode uniqueness, rejection of old/expired fixes, durable revision/history; route usage examples and end-to-end evidence.
@@ -19,3 +19,9 @@ Accepted decisions: docs/adr/0001 through 0004. Exact API: docs/protocol.md; sha
 ## Comments
 
 Round 2 confirmed by user's “Sounds good” on October 3. Shared checks are not route, device, native-build, or circuit verification. Shared browser/device QA requires explicit resource confirmation.
+
+October 3 software evidence: shared Node/strict TypeScript checks passed; server strict check and two real PostgreSQL/HTTP/WebSocket tests passed against an isolated embedded PostgreSQL 18.4 cluster; Compose configurations validate, but Docker's dockerInference startup crash leaves images/container runtime unverified. Firmware portable host check passed; Arduino compile/flash and hardware testing remain deferred to Sunday October 4.
+
+October 3 app-owner validation confirmed PASS by the coordinator: lint, TypeScript, tracking checks using genuine file-backed SQLite and a synthetic HTTP fixture, Expo dependency compatibility check, Android/iOS Metro/Hermes exports, and Android security prebuild checks. Android main/release denies cleartext; debug permits only the explicitly configured host without subdomains, and regeneration without the exception restores strict debug denial. docs/app.md is published. The HTTP fixture is not the actual backend or live GPS; exports/prebuild are not native linking/runtime evidence. iOS prebuild is unsupported on Windows.
+
+Handoff gate: ready-for-human now means software implementation validation is complete and the prototype awaits human hardware/deployment verification. Native linking, Android APK compilation, UI/device GPS, Arduino compilation/flash, electrical/RF checks, production TLS and Docker image/container runtime remain outstanding. The root README links the bring-up order and Sunday evidence checklist; this status does not mark those checks passed.

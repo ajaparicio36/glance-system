@@ -200,6 +200,42 @@ test('real PostgreSQL, HTTP, websocket, lifecycle, durability and concurrent wri
       } finally { await secured.close(); }
     }
 
+    const edgeConfig = readConfig({ DATABASE_URL: databaseUrl, DEVICE_ID: config.deviceId, DEVICE_TOKEN: config.deviceToken, OWNER_TOKEN: config.ownerToken, TRANSPORT_MODE: 'render-edge', NODE_ENV: 'production', RENDER: 'true', RENDER_SERVICE_TYPE: 'web' });
+    const edge = await createApp(edgeConfig, await createStore(databaseUrl, config.deviceId), false);
+    edge.get('/test-transport', async request => ({ protocol: request.protocol, host: request.host, ip: request.ip }));
+    try {
+      const edgeBase = await edge.listen({ host: '127.0.0.1', port: 0 });
+      for (const forwardedProtocol of ['http', 'https', 'https, http']) {
+        const headers = { 'X-Forwarded-Proto': forwardedProtocol, 'X-Forwarded-Host': 'spoof.invalid', 'X-Forwarded-For': '203.0.113.7' };
+        const transport = await fetch(`${edgeBase}/test-transport`, { headers });
+        assert.deepEqual(await transport.json(), { protocol: 'http', host: new URL(edgeBase).host, ip: '127.0.0.1' });
+        assert.equal((await fetch(`${edgeBase}/api/snapshot`, { headers })).status, 401);
+        assert.equal((await fetch(`${edgeBase}/api/snapshot`, { headers: { ...headers, Authorization: `Bearer ${config.deviceToken}` } })).status, 401);
+        assert.equal((await fetch(`${edgeBase}/api/snapshot`, { headers: { ...headers, Authorization: `Bearer ${config.ownerToken}` } })).status, 200);
+      }
+      assert.equal((await request('/api/locations', 'POST', config.ownerToken, observation(), edgeBase)).status, 401);
+      assert.equal((await upload(observation(0.5, 0.5), edgeBase)).accepted, true);
+      for (const token of [config.deviceToken, config.ownerToken]) {
+        const socket = new WebSocket(`${edgeBase.replace('http:', 'ws:')}/api/live`);
+        sockets.push(socket);
+        await once(socket, 'open', { signal: AbortSignal.timeout(5000) });
+        const outcome = once(socket, token === config.ownerToken ? 'message' : 'close', { signal: AbortSignal.timeout(5000) });
+        socket.send(JSON.stringify({ type: 'authenticate', token }));
+        const [event] = await outcome;
+        if (token === config.ownerToken) parseSnapshotMessage(JSON.parse(String((event as MessageEvent).data)) as unknown);
+        else assert.equal((event as CloseEvent).code, 1008);
+        socket.close();
+      }
+      const silent = new WebSocket(`${edgeBase.replace('http:', 'ws:')}/api/live`);
+      sockets.push(silent);
+      await once(silent, 'open', { signal: AbortSignal.timeout(5000) });
+      let leaked = false;
+      silent.addEventListener('message', () => { leaked = true; });
+      const [closure] = await once(silent, 'close', { signal: AbortSignal.timeout(7000) });
+      assert.equal(closure.code, 1008);
+      assert.equal(leaked, false);
+    } finally { await edge.close(); }
+
     for (let index = 0; index < 101; index += 1) {
       await upload(observation());
       await upload(observation(0.5, 0.5));
@@ -275,4 +311,9 @@ test('configuration requires explicit transport, separate secrets and bounded id
   assert.throws(() => readConfig({ ...environment, TRANSPORT_MODE: undefined }));
   assert.throws(() => readConfig({ ...environment, NODE_ENV: 'production' }));
   assert.throws(() => readConfig({ ...environment, TRANSPORT_MODE: 'https-proxy', TRUSTED_PROXY: '0.0.0.0/0' }));
+  const edge = { ...environment, TRANSPORT_MODE: 'render-edge', NODE_ENV: 'production', RENDER: 'true', RENDER_SERVICE_TYPE: 'web' };
+  assert.equal(readConfig(edge).transportMode, 'render-edge');
+  for (const markers of [{ RENDER: undefined }, { RENDER: 'false' }, { RENDER_SERVICE_TYPE: undefined }, { RENDER_SERVICE_TYPE: 'pserv' }, { RENDER_SERVICE_TYPE: 'worker' }]) {
+    assert.throws(() => readConfig({ ...edge, ...markers }));
+  }
 });

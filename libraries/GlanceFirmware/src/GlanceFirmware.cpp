@@ -21,6 +21,10 @@ static char sentence[128] = {};
 static size_t sentenceLength = 0;
 static uint32_t lastObservationMs = 0;
 static char lastGpsTimestamp[25] = {};
+static TinyGPSPlus gpsMonitor;
+static uint32_t gpsObservations = 0;
+static uint32_t lastGpsReportMs = 0;
+static const char *gpsState = "no_rmc";
 static UplinkConfig uplinkConfig;
 static QueueHandle_t uploadQueue = nullptr;
 static RadioConfig radioConfig;
@@ -47,6 +51,8 @@ bool beginGps(const GpsConfig &config) {
 }
 
 static bool parseGps(const char *deviceId, Observation &observation) {
+  if (sentenceLength < 7 || sentence[0] != '$' || strncmp(sentence + 3, "RMC,", 4) != 0) return false;
+  gpsState = "rmc_fields_or_no_fix";
   char validation[sizeof(sentence)];
   memcpy(validation, sentence, sentenceLength + 1);
   if (!completeRmc(validation)) return false;
@@ -54,9 +60,11 @@ static bool parseGps(const char *deviceId, Observation &observation) {
   bool accepted = false;
   for (size_t index = 0; index < sentenceLength; ++index) accepted = parser.encode(sentence[index]) || accepted;
   accepted = parser.encode('\n') || accepted;
+  gpsState = "checksum_or_parser_fields";
   if (!accepted || !parser.location.isValid() || !parser.date.isValid() || !parser.time.isValid() ||
       !parser.location.isUpdated() || !parser.date.isUpdated() || !parser.time.isUpdated()) return false;
   Observation candidate;
+  gpsState = "invalid_id_coordinate_utc";
   if (!validDeviceId(deviceId)) return false;
   strcpy(candidate.deviceId, deviceId);
   candidate.latitude = parser.location.lat();
@@ -67,14 +75,19 @@ static bool parseGps(const char *deviceId, Observation &observation) {
            static_cast<unsigned>(parser.time.minute()), static_cast<unsigned>(parser.time.second()),
            static_cast<unsigned>(parser.time.centisecond()) * 10);
   candidate.receivedAtMs = millis();
-  if (!validObservation(candidate) || !newerThan(candidate, lastGpsTimestamp) ||
-      static_cast<uint32_t>(candidate.receivedAtMs - lastObservationMs) < observationIntervalMs) return false;
+  if (!validObservation(candidate)) return false;
+  gpsState = "duplicate_or_older_utc";
+  if (!newerThan(candidate, lastGpsTimestamp)) return false;
+  gpsState = "cadence_wait";
+  if (static_cast<uint32_t>(candidate.receivedAtMs - lastObservationMs) < observationIntervalMs) return false;
   observation = candidate;
   strcpy(lastGpsTimestamp, candidate.observedAt);
   lastObservationMs = candidate.receivedAtMs;
   const timeval gpsTime = {static_cast<time_t>(timestampSeconds(candidate.observedAt)),
                           static_cast<suseconds_t>(decimal(candidate.observedAt + 20, 3) * 1000)};
   settimeofday(&gpsTime, nullptr);
+  ++gpsObservations;
+  gpsState = "emitted";
   return true;
 }
 
@@ -83,6 +96,7 @@ bool pollGps(const char *deviceId, Observation &observation) {
   size_t readCount = 0;
   while (gpsSerial.available() && readCount++ < 1024) {
     const char character = static_cast<char>(gpsSerial.read());
+    gpsMonitor.encode(character);
     if (character == '$') sentenceLength = 0;
     if (character == '\n') {
       sentence[sentenceLength] = '\0';
@@ -92,6 +106,22 @@ bool pollGps(const char *deviceId, Observation &observation) {
       if (sentenceLength < sizeof(sentence) - 1) sentence[sentenceLength++] = character;
       else sentenceLength = 0;
     }
+  }
+  const uint32_t now = millis();
+  if (static_cast<uint32_t>(now - lastGpsReportMs) >= observationIntervalMs) {
+    Serial.printf("GPS bytes=%lu ok=%lu bad=%lu sat=%ld sat_age_ms=%lu fix_age_ms=%lu\n",
+                  static_cast<unsigned long>(gpsMonitor.charsProcessed()),
+                  static_cast<unsigned long>(gpsMonitor.passedChecksum()),
+                  static_cast<unsigned long>(gpsMonitor.failedChecksum()),
+                  gpsMonitor.satellites.isValid() ? static_cast<long>(gpsMonitor.satellites.value()) : -1L,
+                  static_cast<unsigned long>(gpsMonitor.satellites.age()),
+                  static_cast<unsigned long>(gpsMonitor.location.age()));
+    Serial.printf("GPS rmc=%s emitted=%lu obs_age_ms=%lu utc=%s date_seen=%u time_seen=%u\n", gpsState,
+                  static_cast<unsigned long>(gpsObservations),
+                  static_cast<unsigned long>(gpsObservations ? now - lastObservationMs : UINT32_MAX),
+                  gpsObservations ? lastGpsTimestamp : "none",
+                  static_cast<unsigned>(gpsMonitor.date.isValid()), static_cast<unsigned>(gpsMonitor.time.isValid()));
+    lastGpsReportMs = now;
   }
   return updated;
 }
@@ -123,14 +153,17 @@ static bool allowedUrl(const UplinkConfig &config) {
          (address[0] == 192 && address[1] == 168);
 }
 
-static bool upload(const Observation &observation) {
+static bool upload(const Observation &observation, const char *&state, int &httpStatus) {
   timeval now;
   gettimeofday(&now, nullptr);
+  state = "expired_or_clock_skew";
   if (!freshAt(observation, millis(), static_cast<int64_t>(now.tv_sec) * 1000 + now.tv_usec / 1000)) return false;
   const bool secure = strncmp(uplinkConfig.url, "https://", 8) == 0;
+  state = "tls_clock_wait";
   if (secure && time(nullptr) < 1704067200) return false;
   char body[maxJsonBytes + 1];
   const size_t length = encodeJson(observation, body, sizeof(body));
+  state = "json_failed";
   if (length == 0) return false;
   NetworkClient plainClient;
   NetworkClientSecure secureClient;
@@ -141,10 +174,13 @@ static bool upload(const Observation &observation) {
   http.setConnectTimeout(2000);
   http.setTimeout(2000);
   http.setFollowRedirects(HTTPC_DISABLE_FOLLOW_REDIRECTS);
+  state = "http_begin_failed";
   if (!http.begin(client, uplinkConfig.url)) return false;
   http.addHeader("Content-Type", "application/json");
   http.addHeader("Authorization", String("Bearer ") + uplinkConfig.deviceToken);
   const int status = http.POST(reinterpret_cast<uint8_t *>(body), length);
+  httpStatus = status;
+  state = status == 200 ? "http_200" : "http_failed";
   http.end();
   Serial.printf("Upload HTTP status: %d\n", status);
   return status == 200;
@@ -158,11 +194,17 @@ static void uplinkTask(void *) {
   uint32_t lastAttemptMs = millis() - observationIntervalMs;
   Observation pending;
   bool hasPending = false;
+  uint32_t lastReportMs = millis() - observationIntervalMs / 2;
+  uint32_t attempts = 0;
+  uint32_t expired = 0;
+  int lastHttpStatus = 0;
+  const char *uploadState = "awaiting_observation";
   for (;;) {
     Observation incoming;
     if (xQueueReceive(uploadQueue, &incoming, 0) == pdTRUE) {
       pending = incoming;
       hasPending = true;
+      uploadState = "queued";
     }
     const uint32_t now = millis();
     if (WiFi.status() != WL_CONNECTED && static_cast<uint32_t>(now - lastConnectMs) >= 10000) {
@@ -172,10 +214,22 @@ static void uplinkTask(void *) {
     }
     timeval wallTime;
     gettimeofday(&wallTime, nullptr);
-    if (hasPending && !freshAt(pending, now, static_cast<int64_t>(wallTime.tv_sec) * 1000 + wallTime.tv_usec / 1000)) hasPending = false;
+    if (hasPending && !freshAt(pending, now, static_cast<int64_t>(wallTime.tv_sec) * 1000 + wallTime.tv_usec / 1000)) {
+      hasPending = false;
+      ++expired;
+      uploadState = "expired_or_clock_skew";
+    }
     if (hasPending && WiFi.status() == WL_CONNECTED && static_cast<uint32_t>(now - lastAttemptMs) >= observationIntervalMs) {
       lastAttemptMs = now;
-      if (upload(pending)) hasPending = false;
+      ++attempts;
+      if (upload(pending, uploadState, lastHttpStatus)) hasPending = false;
+    }
+    if (static_cast<uint32_t>(now - lastReportMs) >= observationIntervalMs) {
+      Serial.printf("Uplink wifi=%d pending=%u state=%s attempts=%lu http=%d expired=%lu clock=%s\n",
+                    static_cast<int>(WiFi.status()), static_cast<unsigned>(hasPending), uploadState,
+                    static_cast<unsigned long>(attempts), lastHttpStatus, static_cast<unsigned long>(expired),
+                    wallTime.tv_sec >= 1704067200 ? "ready" : "unset");
+      lastReportMs = now;
     }
     vTaskDelay(pdMS_TO_TICKS(50));
   }

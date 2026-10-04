@@ -1,6 +1,6 @@
 import { timingSafeEqual } from 'node:crypto';
 import Fastify, { LogController } from 'fastify';
-import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
+import type { FastifyInstance, FastifyLoggerOptions, FastifyReply, FastifyRequest } from 'fastify';
 import websocket from '@fastify/websocket';
 import type { WebSocket } from 'ws';
 import { AUTHORIZATION_TIMEOUT_MS, parseAuthenticateMessage, parseGeofenceUpdate, parsePositionObservation, UPLOAD_INTERVAL_MS } from '../../shared/protocol.ts';
@@ -16,9 +16,9 @@ function equalSecret(candidate: unknown, secret: string): boolean {
   return encoded.length === expected.length && timingSafeEqual(encoded, expected);
 }
 
-export async function createApp(config: Config, store: Store, logger = true): Promise<FastifyInstance> {
+export async function createApp(config: Config, store: Store, logger: boolean | FastifyLoggerOptions = true): Promise<FastifyInstance> {
   const app = Fastify({
-    logger: logger ? { redact: ['req.headers.authorization', 'req.body.token', 'token'] } : false,
+    logger: logger ? { ...(typeof logger === 'object' ? logger : {}), redact: ['req.headers.authorization', 'req.body.token', 'token'] } : false,
     logController: new LogController({ disableRequestLogging: true }),
     bodyLimit: 16384,
     requestTimeout: 10000,
@@ -96,10 +96,22 @@ export async function createApp(config: Config, store: Store, logger = true): Pr
     onRequest: async (request, reply) => {
       if (!equalSecret(request.headers.authorization, `Bearer ${config.deviceToken}`)) return reply.code(401).send({ error: 'Unauthorized' });
     },
+    onResponse: async (request, reply) => {
+      if (reply.statusCode >= 400) request.log.warn({ statusCode: reply.statusCode }, 'GPS upload rejected');
+    },
   }, async (request, reply) => {
     const observation = parsePositionObservation(request.body);
     if (observation.deviceId !== config.deviceId) return reply.code(403).send({ error: 'Device not configured' });
-    return store.accept(observation);
+    const result = await store.accept(observation);
+    request.log.info({
+      deviceId: config.deviceId,
+      latitude: observation.latitude,
+      longitude: observation.longitude,
+      observedAt: observation.observedAt,
+      accepted: result.accepted,
+      revision: result.revision,
+    }, result.accepted ? 'GPS upload accepted' : 'GPS upload ignored');
+    return result;
   });
   const ownerOnly = async (request: FastifyRequest, reply: FastifyReply): Promise<void> => {
     if (!equalSecret(request.headers.authorization, `Bearer ${config.ownerToken}`)) await reply.code(401).send({ error: 'Unauthorized' });

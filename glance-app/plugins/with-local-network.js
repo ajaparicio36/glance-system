@@ -16,7 +16,8 @@ module.exports = function withLocalNetwork(config, { host }) {
     await fs.writeFile(path.join(directory, 'glance_network_security.xml'), strict);
     const debugDirectory = path.join(result.modRequest.platformProjectRoot, 'app/src/debug/res/xml');
     await fs.mkdir(debugDirectory, { recursive: true });
-    const exception = host ? `<domain-config cleartextTrafficPermitted="true"><domain includeSubdomains="false">${host}</domain></domain-config>` : '';
+    const debugHosts = [...new Set(['localhost', '127.0.0.1', '10.0.2.2', ...(host ? [host] : [])])];
+    const exception = debugHosts.map(debugHost => `<domain-config cleartextTrafficPermitted="true"><domain includeSubdomains="false">${debugHost}</domain></domain-config>`).join('');
     await fs.writeFile(path.join(debugDirectory, 'glance_network_security.xml'), `<network-security-config><base-config cleartextTrafficPermitted="false" />${exception}</network-security-config>`);
     return result;
   }]);

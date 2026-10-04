@@ -24,9 +24,8 @@ export function Button({ label, onPress, disabled = false, primary = false }: { 
   const colors = usePalette();
   const fontFamily = useFont(false, 'medium');
   return <Pressable accessibilityRole="button" accessibilityLabel={label} accessibilityState={{ disabled }} disabled={disabled} onPress={onPress}
-    className="min-h-[48px] justify-center rounded-lg border px-4 py-3"
-    style={({ pressed }) => ({ borderColor: colors.foreground, backgroundColor: colors[primary ? 'primary' : 'card'], opacity: disabled ? 0.5 : pressed ? 0.7 : 1 })}>
-    <Text style={{ fontFamily, fontSize: 16, lineHeight: 22, textAlign: 'center', color: colors[primary ? 'primary-foreground' : 'foreground'] }}>{label}</Text>
+    style={{ minHeight: 48, justifyContent: 'center', borderRadius: 8, borderWidth: 1, paddingHorizontal: 16, paddingVertical: 12, borderColor: colors.foreground, backgroundColor: colors[primary ? 'primary' : 'card'], opacity: disabled ? 0.5 : 1 }}>
+    {({ pressed }) => <Text style={{ fontFamily, fontSize: 16, lineHeight: 22, textAlign: 'center', color: colors[primary ? 'primary-foreground' : 'foreground'], opacity: pressed ? 0.7 : 1 }}>{label}</Text>}
   </Pressable>;
 }
 

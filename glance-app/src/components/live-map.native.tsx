@@ -2,14 +2,10 @@ import { Camera, GeoJSONSource, Layer, Map as MapLibreMap, Marker, type CameraRe
 import { useMemo, useRef, useState } from 'react';
 import { StyleSheet, View, type NativeSyntheticEvent } from 'react-native';
 import { useReducedMotion } from 'react-native-reanimated';
-import { closePolygonRing, validatePolygon } from '../../../shared/geofence.ts';
-import type { Coordinate } from '../../../shared/protocol.ts';
+import { closePolygonRing, isValidCoordinate, validatePolygon } from '../../../shared/geofence.ts';
 import type { LiveMapProps } from './live-map.types';
+import { fromMapCoordinate, initialMapCenter, toMapCoordinate } from './live-map.geometry';
 import { Button, Label, usePalette } from './tracking-ui';
-
-export function toMapCoordinate(position: Coordinate): [number, number] {
-  return [position.longitude, position.latitude];
-}
 
 function feature(geometry: GeoJSON.Geometry): GeoJSON.Feature {
   return { type: 'Feature', properties: {}, geometry };
@@ -17,10 +13,7 @@ function feature(geometry: GeoJSON.Geometry): GeoJSON.Feature {
 
 export default function LiveMap({ polygon, devices, selectedDeviceId, onDevicePress, editMode = false, previewVertices = [], onMapPress }: LiveMapProps): React.JSX.Element {
   const camera = useRef<CameraRef>(null);
-  const [initial] = useState<[number, number]>(() => {
-    const location = devices.find(device => device.location)?.location;
-    return location ? toMapCoordinate(location) : polygon[0] ? toMapCoordinate(polygon[0]) : [121.0244, 14.5547];
-  });
+  const [initial] = useState(() => initialMapCenter(polygon, devices));
   const [mapError, setMapError] = useState(false);
   const [mapKey, setMapKey] = useState(0);
   const colors = usePalette();
@@ -32,7 +25,7 @@ export default function LiveMap({ polygon, devices, selectedDeviceId, onDevicePr
 
   function recenter(): void {
     const coordinates = [...polygon, ...devices.flatMap(device => device.location ? [device.location] : [])];
-    if (!coordinates.length) return;
+    if (!coordinates.length) { camera.current?.jumpTo({ center: initial, zoom: 16 }); return; }
     const longitudes = coordinates.map(coordinate => coordinate.longitude);
     const latitudes = coordinates.map(coordinate => coordinate.latitude);
     const west = Math.min(...longitudes);
@@ -45,15 +38,15 @@ export default function LiveMap({ polygon, devices, selectedDeviceId, onDevicePr
   }
 
   function mapPress(event: NativeSyntheticEvent<PressEvent>): void {
-    const [longitude, latitude] = event.nativeEvent.lngLat;
-    if (editMode) onMapPress?.({ latitude, longitude });
+    const coordinate = fromMapCoordinate(event.nativeEvent.lngLat);
+    if (editMode && isValidCoordinate(coordinate)) onMapPress?.(coordinate);
   }
 
   return <View style={{ height: 320, backgroundColor: colors.muted }}>
     <MapLibreMap key={mapKey} androidView="texture" attribution attributionPosition={{ top: 12, left: 12 }}
       mapStyle="https://tiles.openfreemap.org/styles/liberty" style={StyleSheet.absoluteFill}
       onPress={mapPress} onDidFailLoadingMap={() => setMapError(true)} onDidFinishLoadingMap={() => setMapError(false)}>
-      <Camera ref={camera} initialViewState={{ center: initial, zoom: 13 }} minZoom={3} maxZoom={19} />
+      <Camera ref={camera} initialViewState={{ center: initial, zoom: 16 }} minZoom={3} maxZoom={19} />
       {saved && <GeoJSONSource id="saved-fence" data={saved}>
         <Layer id="saved-fill" type="fill" paint={{ 'fill-color': colors['chart-1'], 'fill-opacity': 0.15 }} />
         <Layer id="saved-line" type="line" paint={{ 'line-color': colors.foreground, 'line-width': 3 }} />

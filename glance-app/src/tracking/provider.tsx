@@ -6,7 +6,7 @@ import { AppState, Platform } from 'react-native';
 import { parseSnapshotMessage, type Coordinate, type Snapshot } from '../../../shared/protocol.ts';
 import { loadCache, storeCache } from './cache';
 import { acceptsSnapshot, collectAlerts, normalizeSettings, type ConnectionSettings, type SnapshotEntry } from './policy.ts';
-import { liveUrl, requestSnapshot, updateFence } from './network.ts';
+import { liveUrl, requestSnapshot, ServerConnectionError, updateFence } from './network.ts';
 
 type SelectedServer = ConnectionSettings & { scope: string };
 type Connection = 'unconfigured' | 'connecting' | 'live' | 'reconnecting' | 'background';
@@ -158,7 +158,7 @@ export function TrackingProvider({ children }: { children: ReactNode }): React.J
       if (!isCurrent() || !active) return;
       setConnection(attempt === 0 ? 'connecting' : 'reconnecting');
       httpBaseline = true;
-      void refresh().catch(() => { if (isCurrent() && active) setError('Snapshot unavailable. Cached data is retained; retrying.'); });
+      void refresh().catch(error => { if (isCurrent() && active) setError(error instanceof ServerConnectionError ? error.message : 'Snapshot unavailable. Cached data is retained; retrying.'); });
       let socketBaseline = true;
       const currentSocket = new WebSocket(liveUrl(settings));
       socket = currentSocket;
@@ -187,12 +187,12 @@ export function TrackingProvider({ children }: { children: ReactNode }): React.J
         }
       };
       currentSocket.onerror = () => currentSocket.close();
-      currentSocket.onclose = () => {
+      currentSocket.onclose = event => {
         if (!isCurrent() || !active || socket !== currentSocket) return;
         socket = null;
         clearTimeout(handshakeTimer);
         setConnection('reconnecting');
-        setError('Live connection lost. Current safety is unknown; reconnecting.');
+        setError(previous => previous ?? (event.code === 1008 ? 'Live authorization failed. In Setup use OWNER_TOKEN, not DEVICE_TOKEN.' : 'Live connection lost. Check phone LAN access and backend port 3000; reconnecting. Current safety is unknown.'));
         attempt += 1;
         reconnectTimer = setTimeout(connect, Math.min(30000, 1000 * 2 ** Math.min(attempt - 1, 5)));
       };
@@ -200,9 +200,9 @@ export function TrackingProvider({ children }: { children: ReactNode }): React.J
       reconcileTimer = setInterval(() => {
         if (reconcilePending) return;
         reconcilePending = true;
-        void refresh().catch(() => {
+        void refresh().catch(error => {
           if (isCurrent() && active) {
-            setError('Server reconciliation failed. Current safety is unknown.');
+            setError(error instanceof ServerConnectionError ? error.message : 'Server reconciliation failed. Current safety is unknown.');
             socket?.close();
           }
         }).finally(() => { reconcilePending = false; });

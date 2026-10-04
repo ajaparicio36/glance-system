@@ -7,7 +7,8 @@ import { eq } from 'drizzle-orm';
 import { cacheMigration, snapshotCache } from '../src/db/schema.ts';
 import { cacheWrite } from '../src/db/cache-query.ts';
 import { acceptsSnapshot, collectAlerts, normalizeSettings, parseCache, safetyLabel } from '../src/tracking/policy.ts';
-import { FenceConflict, liveUrl, requestSnapshot, updateFence } from '../src/tracking/network.ts';
+import { FenceConflict, liveUrl, requestSnapshot, ServerConnectionError, updateFence } from '../src/tracking/network.ts';
+import { DEFAULT_MAP_POSITION, fromMapCoordinate, initialMapCenter, toMapCoordinate } from '../src/components/live-map.geometry.ts';
 import { palettes } from '../src/tracking/colors.ts';
 import { parseSnapshot } from '../../shared/protocol.ts';
 import { validatePolygon } from '../../shared/geofence.ts';
@@ -16,6 +17,14 @@ const time = '2026-10-03T00:00:00.000Z';
 const vertices = [{ latitude: 11, longitude: 124 }, { latitude: 11, longitude: 125 }, { latitude: 12, longitude: 125 }];
 const empty = parseSnapshot({ revision: 0, serverTime: time, geofence: null, devices: [{ deviceId: 'prototype-001', location: null, boundaryStatus: 'unknown', activeViolationId: null }], incidents: [] });
 const located = parseSnapshot({ ...empty, revision: 2, geofence: { version: 1, vertices, updatedAt: time }, devices: [{ deviceId: 'prototype-001', location: { latitude: 11.1, longitude: 124.2, observedAt: time, receivedAt: time }, boundaryStatus: 'inside', activeViolationId: null }] });
+assert.deepEqual(initialMapCenter([], empty.devices), [122.54401588672367, 10.705114643903741]);
+assert.deepEqual(initialMapCenter(vertices, empty.devices), [124, 11]);
+assert.deepEqual(initialMapCenter(vertices, located.devices), [124.2, 11.1]);
+assert.deepEqual(fromMapCoordinate(toMapCoordinate(DEFAULT_MAP_POSITION)), DEFAULT_MAP_POSITION);
+const tappedDraft = [[122.544, 10.705], [122.545, 10.705], [122.545, 10.706]].map(fromMapCoordinate);
+assert.equal(validatePolygon(tappedDraft).valid, true);
+assert.equal(validatePolygon(tappedDraft.slice(0, -1)).valid, false);
+assert.equal(empty.geofence, null);
 assert.equal(acceptsSnapshot(located, empty), false);
 assert.equal(acceptsSnapshot(located, located), false);
 assert.equal(acceptsSnapshot(located, { ...located, serverTime: '2026-10-03T00:00:01.000Z' }), true);
@@ -83,8 +92,10 @@ sqlite.close();
 unlinkSync(databasePath);
 
 let responseSnapshot = located;
+let responseStatus = 200;
 const server = createServer(async (request, response) => {
   assert.equal(request.headers.authorization, 'Bearer synthetic-owner');
+  if (responseStatus !== 200) { response.writeHead(responseStatus); response.end('untrusted-server-detail'); return; }
   if (request.method === 'PUT') {
     let body = '';
     for await (const chunk of request) body += chunk;
@@ -97,10 +108,21 @@ const server = createServer(async (request, response) => {
   response.end(JSON.stringify(responseSnapshot));
 });
 await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+const settings = { serverUrl: `http://127.0.0.1:${server.address().port}`, ownerToken: 'synthetic-owner' };
 try {
-  const settings = { serverUrl: `http://127.0.0.1:${server.address().port}`, ownerToken: 'synthetic-owner' };
   assert.equal((await requestSnapshot(settings)).revision, 2);
   await assert.rejects(updateFence(settings, vertices, 0), FenceConflict);
   assert.equal((await updateFence(settings, vertices, 1)).geofence.version, 2);
+  responseStatus = 401;
+  await assert.rejects(requestSnapshot(settings), /OWNER_TOKEN.*DEVICE_TOKEN/);
+  responseStatus = 404;
+  await assert.rejects(requestSnapshot(settings), /3000.*8081/);
+  responseStatus = 503;
+  await assert.rejects(requestSnapshot(settings), /503/);
+  responseStatus = 200;
+  responseSnapshot = { token: 'untrusted-server-detail' };
+  await assert.rejects(requestSnapshot(settings), error => error instanceof ServerConnectionError && /Invalid Glance snapshot/.test(error.message) && !error.message.includes('untrusted-server-detail'));
+  await assert.rejects(requestSnapshot(settings, AbortSignal.abort()), /timed out or was interrupted/);
 } finally { await new Promise(resolve => server.close(resolve)); }
-console.log('PASS: strict cache parsing, monotonic durable Drizzle SQLite writes, server/owner isolation, freshness, alert dedup/baselines, polygon validation, contrast, HTTPS policy, HTTP bearer/version/conflict client contract (synthetic local fixture).');
+await assert.rejects(requestSnapshot(settings), /Cannot reach the backend/);
+console.log('PASS: initial empty-map origin and coordinate/tap-draft geometry, strict cache parsing, monotonic durable Drizzle SQLite writes, server/owner isolation, freshness, alert dedup/baselines, polygon validation, contrast, HTTPS policy, HTTP bearer/version/conflict and sanitized connection-error client contract (synthetic local fixture).');

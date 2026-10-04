@@ -147,6 +147,8 @@ User-reported Serial Monitor evidence on October 4 confirms the periodic heartbe
 
 ## Real Arduino compile evidence — October 4, 2026
 
+Subsequent user-reported prototype wiring/power confirmation on October 4: MCU UART1 RX GPIO20 connects to GPS TX, and MCU UART1 TX GPIO21 connects to GPS RX; USB-only power was reported. Only the ignored prototype configuration was updated to RX20/TX21, `wiringVerified=true`, with baud 9600 and all credentials preserved. Installed C3 definitions allow both pins as input/output; native USB uses GPIO18/19, not 20/21. This is user-reported confirmation, not measured electrical safety or GPS acquisition proof. Ensure common ground, 3.3V-compatible UART signals, and battery/solar disconnected; do not confuse GPS VCC with a GPIO. The already flashed disabled image does not gain these settings until the user reflashes. GPS fixes/server uploads remain unverified; master/slave gates are unchanged.
+
 All three real builds pass with the installed versions above and `esp32:esp32:esp32c3:CDCOnBoot=cdc`, using the IDE CLI/config and standard sketchbook discovery, with no `--libraries` override. Their ignored private configurations were present during these builds, with hardware gates disabled. The generic target selects 4MB flash and its default 1,310,720-byte app partition; this is not a measurement or certification of the client's boards.
 
 | Role | Program bytes / partition | Static RAM bytes / 327,680 | Local compile log |

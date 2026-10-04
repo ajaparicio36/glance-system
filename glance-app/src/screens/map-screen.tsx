@@ -1,11 +1,58 @@
 import { Link } from 'expo-router';
 import { useState } from 'react';
-import { ScrollView, View } from 'react-native';
+import { Pressable, View } from 'react-native';
+import { ScrollView } from 'react-native-gesture-handler';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import LiveMap from '@/components/live-map';
 import { Button, Card, Label, usePalette } from '@/components/tracking-ui';
 import { useTracking } from '@/tracking/provider';
 import { locationAge, safetyLabel } from '@/tracking/policy';
+import { clientTimeZone, formatLocalTimestamp, historyPage } from '@/tracking/presentation';
+import type { Incident } from '../../../shared/protocol.ts';
+
+function IncidentCard({ incident }: { incident: Incident }): React.JSX.Element {
+  const [expanded, setExpanded] = useState(false);
+  const status = incident.resolution === null ? 'Violation open' : incident.resolution === 'returned' ? 'Returned inside' : 'Closed · fence changed (not a return)';
+  return <Card>
+    <Pressable accessibilityRole="button" accessibilityLabel={`${incident.deviceId}, episode ${incident.id}, ${status}`}
+      accessibilityState={{ expanded }} accessibilityHint="Show or hide episode details" onPress={() => setExpanded(previous => !previous)}
+      style={{ minHeight: 48, justifyContent: 'center', gap: 4 }}>
+      {({ pressed }) => <View style={{ gap: 4, opacity: pressed ? 0.7 : 1 }}>
+        <Label>{incident.deviceId} · #{incident.id}</Label>
+        <Label>{status}</Label>
+        <Label muted>{expanded ? 'Hide details −' : 'Show details +'}</Label>
+      </View>}
+    </Pressable>
+    {expanded && <>
+      <Label mono selectable>Outside: {formatLocalTimestamp(incident.outside.observedAt)}</Label>
+      <Label mono selectable>{incident.outside.latitude.toFixed(6)}, {incident.outside.longitude.toFixed(6)}</Label>
+      {incident.resolvedAt && <Label mono selectable>Resolved: {formatLocalTimestamp(incident.resolvedAt)}</Label>}
+      {incident.returnPosition && <>
+        <Label mono selectable>Return GPS: {formatLocalTimestamp(incident.returnPosition.observedAt)}</Label>
+        <Label mono selectable>{incident.returnPosition.latitude.toFixed(6)}, {incident.returnPosition.longitude.toFixed(6)}</Label>
+      </>}
+    </>}
+  </Card>;
+}
+
+function IncidentHistory({ incidents }: { incidents: Incident[] }): React.JSX.Element {
+  const [requestedPage, setRequestedPage] = useState(0);
+  const current = historyPage(incidents, requestedPage);
+  if (requestedPage !== current.page) setRequestedPage(current.page);
+  return <View className="gap-3">
+    <Label style={{ fontSize: 20, lineHeight: 26 }}>Violation history</Label>
+    <Label muted>Server-recorded episodes, not a GPS trail. Reconnection shows history without replaying alerts.</Label>
+    <Label muted>Local times · {clientTimeZone()}</Label>
+    {current.total === 0 ? <Label>No recorded episodes in the current snapshot.</Label> : <>
+      <Label muted>{current.total} episodes in current snapshot · page {current.page + 1} of {current.pageCount}</Label>
+      {current.incidents.map(incident => <IncidentCard key={incident.id} incident={incident} />)}
+      <View className="flex-row gap-3">
+        <View style={{ flex: 1 }}><Button label="Previous" disabled={current.page === 0} onPress={() => setRequestedPage(current.page - 1)} /></View>
+        <View style={{ flex: 1 }}><Button label="Next" disabled={current.page + 1 === current.pageCount} onPress={() => setRequestedPage(current.page + 1)} /></View>
+      </View>
+    </>}
+  </View>;
+}
 
 export default function MapScreen(): React.JSX.Element {
   const { entry, settings, connection, error, cacheError, alerts, loading, now, refresh, dismissAlerts } = useTracking();
@@ -50,26 +97,14 @@ export default function MapScreen(): React.JSX.Element {
           {selectedDevice?.location ? <>
             <Label mono selectable>{selectedDevice.location.latitude.toFixed(6)}, {selectedDevice.location.longitude.toFixed(6)}</Label>
             <Label muted>Freshness age {age === null ? 'unknown' : `${Math.floor(age / 1000)}s`} · oldest of GPS/receipt · stale at 15s</Label>
-            <Label mono selectable>GPS: {selectedDevice.location.observedAt}</Label>
-            <Label mono selectable>Received: {selectedDevice.location.receivedAt}</Label>
+            <Label muted>Local times · {clientTimeZone()}</Label>
+            <Label mono selectable>GPS: {formatLocalTimestamp(selectedDevice.location.observedAt)}</Label>
+            <Label mono selectable>Received: {formatLocalTimestamp(selectedDevice.location.receivedAt)}</Label>
           </> : <Label muted>No valid position received. Phone GPS permission is not needed.</Label>}
           <Label muted>{snapshot?.geofence ? `Saved fence v${snapshot.geofence.version}` : 'No confirmed geofence'}</Label>
           <Button label={busy ? 'Refreshing…' : 'Refresh server'} disabled={busy || !settings || loading} onPress={() => void reload()} />
         </Card>
-        <Label style={{ fontSize: 20, lineHeight: 26 }}>Violation history</Label>
-        <Label muted>Server-recorded episodes, not a GPS trail. Reconnection shows history without replaying alerts.</Label>
-        {!snapshot?.incidents.length && <Label>No recorded episodes in the current snapshot.</Label>}
-        {[...(snapshot?.incidents ?? [])].sort((left, right) => right.id - left.id).map(incident => <Card key={incident.id}>
-          <Label>{incident.deviceId} · #{incident.id}</Label>
-          <Label>{incident.resolution === null ? 'Violation open' : incident.resolution === 'returned' ? 'Returned inside' : 'Closed · fence changed (not a return)'}</Label>
-          <Label mono selectable>Outside: {incident.outside.observedAt}</Label>
-          <Label mono selectable>{incident.outside.latitude.toFixed(6)}, {incident.outside.longitude.toFixed(6)}</Label>
-          {incident.resolvedAt && <Label mono selectable>Resolved: {incident.resolvedAt}</Label>}
-          {incident.returnPosition && <>
-            <Label mono selectable>Return GPS: {incident.returnPosition.observedAt}</Label>
-            <Label mono selectable>{incident.returnPosition.latitude.toFixed(6)}, {incident.returnPosition.longitude.toFixed(6)}</Label>
-          </>}
-        </Card>)}
+        <IncidentHistory key={settings?.scope ?? 'unconfigured'} incidents={snapshot?.incidents ?? []} />
       </View>
     </ScrollView>
   </SafeAreaView>;

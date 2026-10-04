@@ -1,6 +1,6 @@
 import type { Coordinate, TrackerSnapshot } from '../../../shared/protocol.ts';
 
-export const DEFAULT_MAP_POSITION: Coordinate = { latitude: 10.705114643903741, longitude: 122.54401588672367 };
+export const DEFAULT_MAP_POSITION: Coordinate = { latitude: 10.730972921778378, longitude: 122.54782989758861 };
 
 export function toMapCoordinate(position: Coordinate): [number, number] {
   return [position.longitude, position.latitude];

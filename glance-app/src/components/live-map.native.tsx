@@ -2,6 +2,7 @@ import { Camera, GeoJSONSource, Layer, Map as MapLibreMap, Marker, type CameraRe
 import { useMemo, useRef, useState } from 'react';
 import { StyleSheet, View, type NativeSyntheticEvent } from 'react-native';
 import { useReducedMotion } from 'react-native-reanimated';
+import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import { closePolygonRing, isValidCoordinate, validatePolygon } from '../../../shared/geofence.ts';
 import type { LiveMapProps } from './live-map.types';
 import { fromMapCoordinate, initialMapCenter, toMapCoordinate } from './live-map.geometry';
@@ -18,6 +19,7 @@ export default function LiveMap({ polygon, devices, selectedDeviceId, onDevicePr
   const [mapKey, setMapKey] = useState(0);
   const colors = usePalette();
   const reducedMotion = useReducedMotion();
+  const mapGesture = useMemo(() => Gesture.Native().shouldActivateOnStart(true).disallowInterruption(true), []);
   const saved = useMemo(() => polygon.length >= 3 ? feature({ type: 'Polygon', coordinates: [closePolygonRing(polygon).map(toMapCoordinate)] }) : null, [polygon]);
   const validation = useMemo(() => validatePolygon(previewVertices), [previewVertices]);
   const previewFill = validation.valid ? feature({ type: 'Polygon', coordinates: [closePolygonRing(validation.vertices).map(toMapCoordinate)] }) : null;
@@ -43,6 +45,8 @@ export default function LiveMap({ polygon, devices, selectedDeviceId, onDevicePr
   }
 
   return <View style={{ height: 320, backgroundColor: colors.muted }}>
+    <GestureDetector gesture={mapGesture}>
+    <View collapsable={false} style={StyleSheet.absoluteFill}>
     <MapLibreMap key={mapKey} androidView="texture" attribution attributionPosition={{ top: 12, left: 12 }}
       mapStyle="https://tiles.openfreemap.org/styles/liberty" style={StyleSheet.absoluteFill}
       onPress={mapPress} onDidFailLoadingMap={() => setMapError(true)} onDidFinishLoadingMap={() => setMapError(false)}>
@@ -66,6 +70,8 @@ export default function LiveMap({ polygon, devices, selectedDeviceId, onDevicePr
         </View>
       </Marker>] : [])}
     </MapLibreMap>
+    </View>
+    </GestureDetector>
     {mapError && <View className="absolute left-4 right-4 top-12 gap-2 rounded-lg p-3" style={{ backgroundColor: colors.card }}>
       <Label>Basemap unavailable. Last confirmed coordinates remain below; tiles are not cached by SQLite.</Label>
       <Button label="Retry map" onPress={() => { setMapError(false); setMapKey(previous => previous + 1); }} />

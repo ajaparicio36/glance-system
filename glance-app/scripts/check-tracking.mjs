@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
-import { mkdirSync, unlinkSync } from 'node:fs';
+import { mkdirSync, readFileSync, unlinkSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
 import { createServer } from 'node:http';
 import { DatabaseSync } from 'node:sqlite';
 import { drizzle } from 'drizzle-orm/node-sqlite';
@@ -9,6 +10,7 @@ import { cacheWrite } from '../src/db/cache-query.ts';
 import { acceptsSnapshot, collectAlerts, normalizeSettings, parseCache, safetyLabel } from '../src/tracking/policy.ts';
 import { FenceConflict, liveUrl, requestSnapshot, ServerConnectionError, updateFence } from '../src/tracking/network.ts';
 import { DEFAULT_MAP_POSITION, fromMapCoordinate, initialMapCenter, toMapCoordinate } from '../src/components/live-map.geometry.ts';
+import { clientTimeZone, formatLocalTimestamp, historyPage } from '../src/tracking/presentation.ts';
 import { palettes } from '../src/tracking/colors.ts';
 import { parseSnapshot } from '../../shared/protocol.ts';
 import { validatePolygon } from '../../shared/geofence.ts';
@@ -17,7 +19,7 @@ const time = '2026-10-03T00:00:00.000Z';
 const vertices = [{ latitude: 11, longitude: 124 }, { latitude: 11, longitude: 125 }, { latitude: 12, longitude: 125 }];
 const empty = parseSnapshot({ revision: 0, serverTime: time, geofence: null, devices: [{ deviceId: 'prototype-001', location: null, boundaryStatus: 'unknown', activeViolationId: null }], incidents: [] });
 const located = parseSnapshot({ ...empty, revision: 2, geofence: { version: 1, vertices, updatedAt: time }, devices: [{ deviceId: 'prototype-001', location: { latitude: 11.1, longitude: 124.2, observedAt: time, receivedAt: time }, boundaryStatus: 'inside', activeViolationId: null }] });
-assert.deepEqual(initialMapCenter([], empty.devices), [122.54401588672367, 10.705114643903741]);
+assert.deepEqual(initialMapCenter([], empty.devices), [122.54782989758861, 10.730972921778378]);
 assert.deepEqual(initialMapCenter(vertices, empty.devices), [124, 11]);
 assert.deepEqual(initialMapCenter(vertices, located.devices), [124.2, 11.1]);
 assert.deepEqual(fromMapCoordinate(toMapCoordinate(DEFAULT_MAP_POSITION)), DEFAULT_MAP_POSITION);
@@ -40,6 +42,39 @@ assert.equal(safetyLabel(future, { snapshot: located, savedAt: 1000 }, 16000, tr
 assert.equal(validatePolygon([{ latitude: NaN, longitude: 0 }, ...vertices]).valid, false);
 assert.equal(validatePolygon([{ latitude: 11, longitude: 124 }, { latitude: 12, longitude: 125 }, { latitude: 11, longitude: 125 }, { latitude: 12, longitude: 124 }]).valid, false);
 const incident = { id: 1, deviceId: 'prototype-001', outside: { latitude: 13, longitude: 124, observedAt: time }, resolution: null, resolvedAt: null, returnPosition: null };
+const episodes = Array.from({ length: 12 }, (_, index) => ({ ...incident, id: index + 1 }));
+assert.deepEqual(historyPage([], 9), { incidents: [], page: 0, pageCount: 1, total: 0 });
+assert.deepEqual(historyPage(episodes, 0).incidents.map(episode => episode.id), [12, 11, 10, 9, 8]);
+assert.deepEqual(historyPage(episodes, 1).incidents.map(episode => episode.id), [7, 6, 5, 4, 3]);
+assert.deepEqual(historyPage(episodes, 99).incidents.map(episode => episode.id), [2, 1]);
+assert.equal(historyPage(episodes, -1).page, 0);
+assert.equal(historyPage(episodes, NaN).page, 0);
+assert.equal(historyPage(episodes.slice(0, 4), 2).page, 0);
+assert.deepEqual(episodes.map(episode => episode.id), Array.from({ length: 12 }, (_, index) => index + 1));
+assert.equal(historyPage(episodes, 0).incidents[0], episodes[11]);
+assert.equal(clientTimeZone(), Intl.DateTimeFormat().resolvedOptions().timeZone);
+assert.equal(formatLocalTimestamp('invalid'), 'Time unavailable');
+assert.equal(formatLocalTimestamp('2026-10-03T00:00:00Z'), 'Time unavailable');
+assert.notEqual(formatLocalTimestamp(time), time);
+assert.equal(incident.outside.observedAt, time);
+const presentationUrl = new URL('../src/tracking/presentation.ts', import.meta.url).href;
+function presentationInZone(zone) {
+  return JSON.parse(execFileSync(process.execPath, ['--input-type=module', '-e', `import { clientTimeZone, formatLocalTimestamp } from ${JSON.stringify(presentationUrl)}; console.log(JSON.stringify({ zone: clientTimeZone(), formatted: formatLocalTimestamp(${JSON.stringify(time)}) }));`], { env: { ...process.env, TZ: zone }, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }));
+}
+const utcTime = presentationInZone('UTC');
+const honoluluTime = presentationInZone('Pacific/Honolulu');
+assert.equal(utcTime.zone, 'UTC');
+assert.equal(honoluluTime.zone, 'Pacific/Honolulu');
+assert.notEqual(utcTime.formatted, honoluluTime.formatted);
+const nativeMap = readFileSync(new URL('../src/components/live-map.native.tsx', import.meta.url), 'utf8');
+assert.match(nativeMap, /Gesture\.Native\(\)\.shouldActivateOnStart\(true\)\.disallowInterruption\(true\)/);
+assert.match(nativeMap, /<GestureDetector gesture={mapGesture}>/);
+assert.match(nativeMap, /<GestureDetector gesture={mapGesture}>\s*<View collapsable={false} style={StyleSheet\.absoluteFill}>\s*<MapLibreMap/);
+for (const screen of ['map-screen', 'setup-screen']) {
+  const source = readFileSync(new URL(`../src/screens/${screen}.tsx`, import.meta.url), 'utf8');
+  assert.match(source, /import \{ ScrollView \} from 'react-native-gesture-handler'/);
+  assert.doesNotMatch(source, /scrollEnabled=/);
+}
 const outside = { ...located, revision: 3, devices: [{ ...located.devices[0], boundaryStatus: 'outside', activeViolationId: 1 }], incidents: [incident] };
 const seen = new Set();
 assert.deepEqual(collectAlerts(empty, seen, true), []);
@@ -125,4 +160,4 @@ try {
   await assert.rejects(requestSnapshot(settings, AbortSignal.abort()), /timed out or was interrupted/);
 } finally { await new Promise(resolve => server.close(resolve)); }
 await assert.rejects(requestSnapshot(settings), /Cannot reach the backend/);
-console.log('PASS: initial empty-map origin and coordinate/tap-draft geometry, strict cache parsing, monotonic durable Drizzle SQLite writes, server/owner isolation, freshness, alert dedup/baselines, polygon validation, contrast, HTTPS policy, HTTP bearer/version/conflict and sanitized connection-error client contract (synthetic local fixture).');
+console.log('PASS: initial empty-map origin and coordinate/tap-draft geometry, five-episode pagination/clamping/identity, detected local timezone formatting (UTC and Pacific/Honolulu) with unchanged wire timestamps, native gesture source wiring (not device behavior), strict cache parsing, monotonic durable Drizzle SQLite writes, server/owner isolation, freshness, alert dedup/baselines, polygon validation, contrast, HTTPS policy, HTTP bearer/version/conflict and sanitized connection-error client contract (synthetic local fixture).');

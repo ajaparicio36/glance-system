@@ -1,5 +1,6 @@
 import { useCallback, useMemo, useState } from 'react';
-import { Alert, BackHandler, Keyboard, KeyboardAvoidingView, Platform, ScrollView } from 'react-native';
+import { Alert, BackHandler, Keyboard, KeyboardAvoidingView, Platform } from 'react-native';
+import { ScrollView } from 'react-native-gesture-handler';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from 'expo-router';
 import { isValidCoordinate, validatePolygon } from '../../../shared/geofence.ts';

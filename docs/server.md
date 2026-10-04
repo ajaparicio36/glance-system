@@ -6,32 +6,58 @@ Node 24.13+ runs erasable TypeScript directly. Fastify 5, Drizzle and postgres-j
 
 Use a trusted private LAN only: HTTP/ws exposes upload and owner credentials to observers. Keep Windows firewall access limited to that LAN. `TRANSPORT_MODE=trusted-local` is an explicit development exception; production rejects it.
 
-From repository root in PowerShell, generate three **different** random secrets, then start the database-only development service:
+### October 4 bench: prototype first
+
+The confirmed Ethernet address is **192.168.1.95**. Private credentials are provisioned in ignored `glance-server/.env`: separate upload/owner tokens, `DEVICE_ID=prototype-001`, explicit trusted-local mode, **`HOST=192.168.1.95`**, port 3000, and a matching local database password. This bench binds Ethernet only, not all interfaces or Hamachi/VPN address 25.5.146.49. No root `.env` is needed. The uploaded tracker identity stays the same when moving from the direct GPS/WiFi prototype to one GPS/LoRa slave forwarded by a no-GPS master. Do not run both sources simultaneously under this singleton identity.
+
+From repository root in PowerShell, use the minimal bench helper:
 
 ```powershell
-$env:POSTGRES_PASSWORD = node -e "console.log(require('node:crypto').randomBytes(32).toString('base64url'))"
-$env:DEVICE_TOKEN = node -e "console.log(require('node:crypto').randomBytes(32).toString('base64url'))"
-$env:OWNER_TOKEN = node -e "console.log(require('node:crypto').randomBytes(32).toString('base64url'))"
-$env:DEVICE_ID = 'prototype-001'
-$env:DATABASE_URL = "postgres://glance:$($env:POSTGRES_PASSWORD)@127.0.0.1:5432/glance"
-$env:TRANSPORT_MODE = 'trusted-local'
-docker compose -f docker-compose.dev.yml up -d --wait
+node tools/dev/start-local.mjs --prepare
+node tools/dev/start-local.mjs
 cd glance-server
 pnpm install --frozen-lockfile
 pnpm check
+'DATABASE_URL','DEVICE_ID','DEVICE_TOKEN','OWNER_TOKEN','TRANSPORT_MODE','HOST','PORT','NODE_ENV','TRUSTED_PROXY' | ForEach-Object { Remove-Item "Env:$_" -ErrorAction SilentlyContinue }
 pnpm start
 ```
 
-Persist generated credentials privately if you need them across terminals/restarts. Alternatively copy `glance-server/.env.example` to `glance-server/.env`, replace every placeholder, and use `pnpm start` or `pnpm dev`. Never commit real `.env` files. Device IDs are 1–64 ASCII characters matching `^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$`; tokens must be different random base64url strings, 32–128 characters. Startup refuses placeholders and identity changes against an existing database. Use URL-encoded passwords in DATABASE_URL; generated base64url secrets need no additional encoding.
+`--prepare` creates the private file only if absent, ready for firmware provisioning without starting services. The normal invocation reuses `docker-compose.dev.yml` under the dedicated `glance-bench` project, derives its database password and loopback port from the private DATABASE_URL, and explicitly overrides inherited Compose variables. It prefers free port 5432 when creating a new config, otherwise chooses a free loopback port. Existing credentials are never rewritten; an existing bench volume without its original config is refused, not reset. HOST must explicitly select a current local RFC1918 IPv4 interface; all-interface and public addresses, including this Hamachi address, are refused without modifying existing config. This is address validation, not VPN detection: a VPN interface using a private address can pass. The bench explicitly selects Ethernet 192.168.1.95. Do not delete the volume or regenerate secrets between sessions. Node `--env-file` does not override inherited variables: the PowerShell environment cleanup affects only that terminal and lets the existing `pnpm start` script read the private file instead of another project's settings. Any background launch must similarly pass the private file's values explicitly over inherited environment.
 
-Default bind is `0.0.0.0:3000`. The device and phone need the server computer's actual LAN address, for example `http://192.168.1.20:3000` and `ws://192.168.1.20:3000/api/live`, **not their own localhost**. Configure firmware/native trusted-local permissions narrowly for this development endpoint. Development PostgreSQL is published only on computer loopback; `POSTGRES_PORT` can change its default 5432. SIGINT/SIGTERM closes sockets and database pools.
+A bench server was left ready on port 3000 for bring-up; its owned PID/entrypoint/start metadata is in ignored `tools/dev/.env.bench-server.json`, and its log is `tools/dev/.env.bench-server.log`. Check this record and the actual listener before starting another process; do not terminate an unrelated port owner or a recycled PID. The owned database is `glance-bench-db-1` with volume `glance-bench_glance_dev_db`, published only at `127.0.0.1:5432`. Preserve that volume for the owner fence, last location and episodes.
+
+For a foreground `pnpm start`, stop the server with Ctrl+C. To stop only the recorded background server from repository root in PowerShell, verify its process identity/start time before termination:
+
+```powershell
+$record = Get-Content tools/dev/.env.bench-server.json | ConvertFrom-Json
+$owned = Get-CimInstance Win32_Process -Filter "ProcessId = $($record.pid)"
+$started = if ($record.startedAt -is [DateTime]) { $record.startedAt.ToUniversalTime() } else { [DateTimeOffset]::Parse($record.startedAt).UtcDateTime }
+if ($null -eq $owned -or $owned.Name -ne 'node.exe' -or $owned.CommandLine -notmatch 'src/main.ts' -or [Math]::Abs(($owned.CreationDate.ToUniversalTime() - $started).TotalSeconds) -gt 5) { throw 'Ownership check failed; stop nothing' }
+Stop-Process -Id $record.pid
+'POSTGRES_PASSWORD','POSTGRES_PORT' | ForEach-Object { Remove-Item "Env:$_" -ErrorAction SilentlyContinue }
+docker compose --env-file glance-server/.env --project-name glance-bench -f docker-compose.dev.yml stop db
+```
+
+Compose parses required variables even for `stop`: the private env file supplies POSTGRES_PASSWORD, and clearing inherited POSTGRES_PASSWORD/POSTGRES_PORT prevents another project's values from taking precedence. With this bench's loopback port 5432, the Compose default matches; stopping does not recreate or change port bindings. The stop command preserves the bench volume and affects no other Compose project. Do not use `down --volumes`, reset, prune, or generic process-name termination. Starting again uses the helper and existing `pnpm start` workflow above. If DHCP changes the Ethernet IP, stop the owned server and explicitly update private HOST, firmware/app URLs and the exact Android debug host exception before rebuilding/restarting; do not silently bind every interface.
+
+Never commit real `.env` files. Device IDs are 1–64 ASCII characters matching `^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$`; tokens must be different random base64url strings, 32–128 characters. Startup refuses placeholders and identity changes against an existing database. Use URL-encoded passwords in DATABASE_URL; generated base64url secrets need no additional encoding. The firmware worker privately reads only DEVICE_TOKEN and DEVICE_ID; OWNER_TOKEN is for the app/owner, not the firmware.
+
+The backend's general default remains `0.0.0.0:3000`; this bench explicitly overrides it with the Ethernet-only HOST above. Device upload URL is **`http://192.168.1.95:3000/api/locations`**; owner/app base URL is **`http://192.168.1.95:3000`** and live channel **`ws://192.168.1.95:3000/api/live`**, not the device/phone's localhost. Configure firmware's scoped trusted-LAN opt-in. Android needs a debug development-build rebuild with exactly `GLANCE_LOCAL_HTTP_HOST=192.168.1.95`; an older build configured for another IP will not acquire this exception from a URL change. Release/global cleartext weakening is not permitted. No broad Windows firewall rule was added; the successful PC-to-own-LAN-address check does not prove a phone/device can cross the firewall or AP isolation. Public cloud still requires certificate-verified HTTPS/wss.
+
+For the later pair, provision slave `deviceId`/radio `sourceDeviceId` and the master's expected `sourceDeviceId` as **prototype-001**, not the checked-in examples' **slave-01**. The master preserves the slave's observation identity, coordinates and canonical GPS UTC timestamp; it never registers/uploads its own position. Server receipt time does not replace GPS time. Master reception needs valid system time via its configured NTP server (`pool.ntp.org` by default): allow Internet NTP or provide a genuinely operational LAN NTP service. This HTTP service is not an NTP server; do not point NTP at this PC unless an actual time service is separately provided. The existing 15-second age gate and 5-second future-skew limit apply to forwarded fixes too. No backend route/schema change is required.
+
+The client can provide two devices; the prototype ESP32-C3 needs replacement because one appears burnt. Prototype remains first priority. Device availability is not electrical validation: keep USB-only demo power, battery/solar deferral, rails/polarity/common-ground/UART checks and radio band/antenna/legal gates intact. No hardware, live GPS or RF test was performed here. SIGINT/SIGTERM closes sockets and database pools.
 
 ## Exact route examples
 
-These PowerShell/curl commands run in a second terminal containing the same generated credentials. The upload below is a **labelled synthetic integration fixture**, not live-GPS evidence. Actual hardware must provide valid live GPS coordinates and UTC observation time. Timestamps must be exactly `YYYY-MM-DDTHH:mm:ss.sssZ`.
+These PowerShell/curl commands run from repository root in a second terminal. Load credentials privately from the existing file; do not print the resulting object. The upload below is a **labelled synthetic integration fixture**, not live-GPS evidence, and should not be used to seed the waiting hardware bench. Actual hardware must provide valid live GPS coordinates and UTC observation time. Timestamps must be exactly `YYYY-MM-DDTHH:mm:ss.sssZ`.
 
 ```powershell
-$base = 'http://192.168.1.20:3000'
+$private = node -e "process.stdout.write(JSON.stringify(require('node:util').parseEnv(require('node:fs').readFileSync('glance-server/.env','utf8'))))" | ConvertFrom-Json
+$env:OWNER_TOKEN = $private.OWNER_TOKEN
+$env:DEVICE_TOKEN = $private.DEVICE_TOKEN
+$env:DEVICE_ID = $private.DEVICE_ID
+$base = 'http://192.168.1.95:3000'
 curl.exe --fail-with-body "$base/health"
 $snapshot = curl.exe --fail-with-body -H "Authorization: Bearer $env:OWNER_TOKEN" "$base/api/snapshot" | ConvertFrom-Json
 $version = if ($null -eq $snapshot.geofence) { 0 } else { $snapshot.geofence.version }

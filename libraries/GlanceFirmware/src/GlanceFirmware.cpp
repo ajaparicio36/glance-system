@@ -255,7 +255,7 @@ static bool authenticate(const uint8_t *data, size_t length, uint8_t *tag) {
 
 void serviceRadioTransmission() {
   if (radioTransmitting) {
-    if (LoRa.isTransmitting() && static_cast<uint32_t>(millis() - transmissionStartedMs) < 2000) return;
+    if (static_cast<uint32_t>(millis() - transmissionStartedMs) < 2000 && !LoRa.beginPacket()) return;
     LoRa.idle();
     radioTransmitting = false;
   }

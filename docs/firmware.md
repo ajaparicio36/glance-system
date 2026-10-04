@@ -1,6 +1,6 @@
 # Arduino ESP32-C3 firmware
 
-Implementation prepared October 3, 2026. Arduino CLI/toolchain is not installed here and was deliberately not installed today. No ESP32 build, flash, wiring, GPS acquisition, radio transmission, TLS handshake, server integration, or power measurement is verified by the host checks. Sunday October 4 is the device bring-up opportunity; Monday October 5 requires live prototype GPS and server-reported polygon violation/return.
+Implementation prepared October 3, 2026; bring-up audit October 4. Arduino IDE supplies Arduino CLI 1.1.1 on this machine, with ESP32 core 3.3.12, TinyGPSPlus 1.0.3, ArduinoJson 7.4.3, and LoRa 0.8.0 already installed. Do not downgrade or reinstall these to match the earlier unverified recommendations. Flashing, wiring, GPS acquisition, radio transmission, device TLS, and power measurements remain unverified. Monday October 5 requires live GPS and server-reported polygon violation/return; the two-device master/slave flow can also be tested once soldering and hardware verification are complete.
 
 The explicit firmware task confirms Round 2 behavior after the root design and Round 1 ADRs were written. Their statements that cadence/lifecycle/access details remain pending are historical, not a reason to silently implement different behavior. The corrected shared contract requires canonical millisecond UTC timestamps, IDs matching `^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$`, at most 5 seconds future skew, and stale reporting if either observation age or receipt age reaches 15 seconds. Firmware uses these corrected requirements. This document describes the requested implementation, not a new accepted ADR or a hardware certification.
 
@@ -12,16 +12,19 @@ The explicit firmware task confirms Round 2 behavior after the root design and R
 | `glance-slave/glance-slave.ino` | GPS UART parsing and authenticated raw SX1276 transmission; no Wi-Fi initialization. |
 | `glance-master/glance-master.ino` | Authenticated radio reception and Wi-Fi forwarding; no GPS UART initialization. |
 
-`libraries/GlanceFirmware` owns the shared GPS, JSON, network, and radio implementation. Arduino resolves its public header via `--libraries ./libraries`, not fragile parent-directory includes from generated sketch build folders. Library compilation includes the dependencies for all roles, although each sketch initializes only its own peripherals. No firmware role evaluates fences, generates incidents, or fabricates location, battery, buzzer, or disconnection events.
+`libraries/GlanceFirmware` owns the shared GPS, JSON, network, and radio implementation. Register that canonical directory in the actual Arduino sketchbook using the helper below; Arduino IDE then resolves its public header normally. The Windows junction avoids duplicate implementations and survives repository edits, but requires the repository to remain at that path. No fragile parent-directory sketch includes are used. Library compilation includes the dependencies for all roles, although each sketch initializes only its own peripherals. No firmware role evaluates fences, generates incidents, or fabricates location, battery, buzzer, or disconnection events.
 
 ## Configure locally before powering modules
 
-From the repository root, copy only the configuration for the role you are provisioning:
+Private local settings are already prepared on this machine; do not replace them with examples or lose the provisioned Wi-Fi, upload token, and radio key. From the repository root, create only absent configuration files for the roles you are provisioning:
 
 ```powershell
-Copy-Item glance-prototype/config.example.h glance-prototype/config.local.h
-Copy-Item glance-slave/config.example.h glance-slave/config.local.h
-Copy-Item glance-master/config.example.h glance-master/config.local.h
+foreach ($role in @('prototype', 'slave', 'master')) {
+  $localConfig = "glance-$role/config.local.h"
+  if (-not (Test-Path -LiteralPath $localConfig)) {
+    Copy-Item -LiteralPath "glance-$role/config.example.h" -Destination $localConfig
+  }
+}
 ```
 
 Each role ignores its own `config.local.h`. Never put real credentials in the checked-in example or logs. With no local configuration the examples compile but runtime readiness fails: verification flags are false, pins are `-1`, radio frequency is zero, and network credentials are empty. Set verification flags only after the physical checks below. GPIO range checks cannot certify board routing, reserved pins, supply voltage, or legality.
@@ -88,37 +91,51 @@ Radio frames are at most 233 bytes: byte `0x01`, 1–200 exact UTF-8 JSON bytes,
 
 Master additionally rejects timestamps 15 seconds or more behind its synchronized clock, or more than 5 seconds ahead, at millisecond precision, and carries remaining observation age into queue expiry. Upload and pending-queue expiry independently check both monotonic local receipt age and actual GPS UTC age; a delayed observation cannot become fresh by entering or leaving a queue. Radio high-water timestamps are RAM-only and reset on reboot; authenticated replay within the small clock window may be forwarded after a restart, but the server's persistent observation deduplication remains authoritative. Replay outside that window is rejected. NTP/physical GPS trust and time-skew calibration require bench testing.
 
-Radio TX is asynchronous; the slave services its completion/2-second abort guard every foreground loop even when GPS has no fix. There are no ACKs/retries, collision avoidance, multi-node queue, or duty-cycle scheduler. Five-second cadence must itself be checked against local RF rules and airtime; do not set the band-verification flag if unlawful. Collisions/interference/receiver downtime lose messages. The server alone decides initial-outside violation, boundary-inside, repeated-outside deduplication, return resolution, and fence-change closure; radio/network absence never invents a return.
+Radio TX is asynchronous; the slave services its completion/2-second abort guard every foreground loop even when GPS has no fix. LoRa 0.8.0's public `beginPacket()` returns zero during transmission and only clears/resets the completed frame when ready; it does not initiate another transmission. The real Arduino compile exposed the previous invalid call to its private `isTransmitting()` method, which is now removed. No DIO interrupt or custom register access is needed. There are no ACKs/retries, collision avoidance, multi-node queue, or duty-cycle scheduler. Five-second cadence must itself be checked against local RF rules and airtime; do not set the band-verification flag if unlawful. Collisions/interference/receiver downtime lose messages. The server alone decides initial-outside violation, boundary-inside, repeated-outside deduplication, return resolution, and fence-change closure; radio/network absence never invents a return.
 
 ## Sunday setup, compile, flash, and evidence
 
-Do not execute installation or flashing until the requested Sunday setup. After Arduino CLI is installed by the user, from `D:/glance`:
+The original missing-header error was reproduced using the IDE's CLI/config without `--libraries`: the repository library was absent from the sketchbook. Registration fixes discovery, not board wiring. Find the sketchbook under Arduino IDE Preferences or `directories.user` in its CLI YAML. From `D:/glance`, using this machine's detected paths:
 
 ```powershell
-arduino-cli config init
-arduino-cli config add board_manager.additional_urls https://espressif.github.io/arduino-esp32/package_esp32_index.json
-arduino-cli core update-index
-arduino-cli core install esp32:esp32@3.3.2
-arduino-cli lib install "TinyGPSPlus@1.1.0" "ArduinoJson@7.4.2" "LoRa@0.8.0"
-arduino-cli board list
-arduino-cli board details --fqbn esp32:esp32:esp32c3
-arduino-cli compile --fqbn esp32:esp32:esp32c3 --libraries ./libraries ./glance-prototype
-arduino-cli compile --fqbn esp32:esp32:esp32c3 --libraries ./libraries ./glance-slave
-arduino-cli compile --fqbn esp32:esp32:esp32c3 --libraries ./libraries ./glance-master
+./tools/firmware/register-library.ps1 -Sketchbook 'C:/Users/ajapa/OneDrive/Documents/Arduino'
+$cli = 'C:/Users/ajapa/AppData/Local/Programs/arduino-ide/resources/app/lib/backend/resources/arduino-cli.exe'
+$cliConfig = 'C:/Users/ajapa/.arduinoIDE/arduino-cli.yaml'
+& $cli --config-file $cliConfig lib list
+& $cli --config-file $cliConfig board details --fqbn esp32:esp32:esp32c3
+& $cli --config-file $cliConfig compile --fqbn esp32:esp32:esp32c3:CDCOnBoot=cdc ./glance-prototype
+& $cli --config-file $cliConfig compile --fqbn esp32:esp32:esp32c3:CDCOnBoot=cdc ./glance-slave
+& $cli --config-file $cliConfig compile --fqbn esp32:esp32:esp32c3:CDCOnBoot=cdc ./glance-master
 ```
 
-The generic `esp32:esp32:esp32c3` target is an API/build starting point, not a verified selection for the actual Mini board. Confirm board options, flash size/mode, USB CDC/console, bootloader procedure, and physical model; replace the FQBN/options if required. Check each compile exit code before the next step. Compilation with unconfigured examples proves syntax only, not readiness.
+Restart Arduino IDE after registration if it was open. The helper is idempotent for its own junction and refuses to overwrite an unrelated existing library. If the repository moves, inspect and remove only that junction before registering the new path; do not recursively delete the linked library. For a new machine, install `esp32 by Espressif Systems`, TinyGPSPlus by Mikal Hart, ArduinoJson by Benoit Blanchon, and LoRa by Sandeep Mistry using its own IDE configuration. The versions above are the installed audit targets, not a demand to downgrade newer installations.
+
+The generic `esp32:esp32:esp32c3` target is an API/build starting point, not a verified selection for the actual Mini board. `CDCOnBoot=cdc` enables native USB serial for the audited build (IDE: USB CDC On Boot Enabled); a USB-to-UART board may need different options. Confirm flash size/mode, USB versus UART console, bootloader procedure, and physical model; replace the FQBN/options if required. Check each compile exit code before the next step. Compilation with hardware gates disabled proves syntax only, not powered readiness.
+
+Ignored `config.local.h` files are prepared on this machine for the explicitly trusted LAN endpoint `http://192.168.1.95:3000/api/locations`; only the upload credential is provisioned on prototype/master. Master/slave share a private random nonzero radio key and source identity `prototype-001`, matching the local server; only one tracker/source is supported. Never run prototype and slave as simultaneous independent trackers with that shared identity. GPS pins remain `-1` with `wiringVerified=false`; radio pins remain `-1`, frequency zero, and `wiringAndBandVerified=false`. Confirmation of the replacement board, rails, actual UART/SPI wiring, radio module band, antenna, and legal channel is required before enabling these gates. The burned board needs physical/electrical diagnosis, not a software assurance. Master delivery requires working NTP even for LAN HTTP because it has no GPS clock.
 
 Only after the assigned device/port is confirmed available, substitute its actual port (never assume `COM3`):
 
 ```powershell
 $port = 'REPLACE_WITH_CONFIRMED_COM_PORT'
-arduino-cli upload --fqbn esp32:esp32:esp32c3 --port $port --input-dir ./build/prototype ./glance-prototype
+& $cli --config-file $cliConfig upload --fqbn esp32:esp32:esp32c3:CDCOnBoot=cdc --port $port --input-dir ./tools/firmware/.build/prototype ./glance-prototype
 ```
 
-For that upload command, first compile with `--output-dir ./build/prototype` appended to the prototype compile command. Use distinct output directories/physical ports for slave/master. Alternatively perform `arduino-cli compile --upload --port $port --fqbn esp32:esp32:esp32c3 --libraries ./libraries ./glance-prototype`. Do not run monitor/flashing/device interaction without confirming the shared device is available. For confirmed serial console use `arduino-cli monitor --port $port --config baudrate=115200`.
+For that upload command, first compile with `--output-dir ./tools/firmware/.build/prototype` appended to the prototype compile command. Use distinct ignored output directories/physical ports for slave/master. Firmware binaries contain plaintext private configuration: keep them and compile logs outside Git. Do not run monitor/flashing/device interaction without confirming the shared device is available. For confirmed serial console use `& $cli --config-file $cliConfig monitor --port $port --config baudrate=115200`.
 
 Collect Sunday evidence: all three compile logs; actual board/pin/rail/antenna measurements; prototype outdoor live valid fix to server/app timestamp; valid HTTPS hostname/CA and wrong-CA rejection; explicitly opted-in LAN HTTP success and public HTTP rejection; absent GPS/inactive RMC/bad checksum causing no fresh reports; Wi-Fi outage/recovery retaining last location and stale state; initial-outside/return flow observed at server/app; one authenticated slave→master→server observation preserving ID/UTC; wrong key, altered payload, wrong ID, duplicate/older/stale/future packet rejection; clock sync loss; RF receiver loss; burst power/reset behavior. Label injected frames/positions as synthetic supplemental evidence. No browser/emulator/device UI is required for the host checks below.
+
+## Real Arduino compile evidence — October 4, 2026
+
+All three real builds pass with the installed versions above and `esp32:esp32:esp32c3:CDCOnBoot=cdc`, using the IDE CLI/config and standard sketchbook discovery, with no `--libraries` override. Their ignored private configurations were present during these builds, with hardware gates disabled. The generic target selects 4MB flash and its default 1,310,720-byte app partition; this is not a measurement or certification of the client's boards.
+
+| Role | Program bytes / partition | Static RAM bytes / 327,680 | Local compile log |
+| --- | --- | --- | --- |
+| Prototype | 1,133,849 / 1,310,720 (86%) | 38,568 (11%) | `tools/firmware/.build/prototype-compile.log` |
+| Master | 1,130,041 / 1,310,720 (86%) | 38,504 (11%) | `tools/firmware/.build/master-compile.log` |
+| Slave | 423,104 / 1,310,720 (32%) | 19,852 (6%) | `tools/firmware/.build/slave-compile.log` |
+
+Upload artifacts are in the corresponding ignored `.build/<role>/` directories. Static RAM metrics exclude runtime task stacks, heap, network/TLS allocations, and peak usage. The registration helper passes idempotent re-registration and refusal to replace an unrelated existing library; strict portable C++17 checks and shared TypeScript protocol checks also pass. Source review traces complete checksum-validated RMC observations, canonical UTC, bounded latest-only queues, authenticated radio parsing, replay/freshness gates, and the no-GPS master's NTP-dependent forwarding. This source/build evidence does not prove physical radio, GPS, TLS, or device-to-server delivery.
 
 ## Host check and upstream API review
 

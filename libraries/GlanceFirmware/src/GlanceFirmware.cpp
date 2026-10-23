@@ -1,4 +1,5 @@
 #include "GlanceFirmware.h"
+#include "GlanceTls.h"
 #include <ArduinoJson.h>
 #include <HTTPClient.h>
 #include <NetworkClientSecure.h>
@@ -140,7 +141,7 @@ static bool allowedUrl(const UplinkConfig &config) {
   const String url(config.url);
   if (url.length() > 256 || url.indexOf('\r') >= 0 || url.indexOf('\n') >= 0 ||
       url.indexOf('@') >= 0 || !url.endsWith("/api/locations")) return false;
-  if (url.startsWith("https://")) return strlen(config.rootCa) > 0 && url.length() > 26;
+  if (url.startsWith("https://")) return tlsTrustAvailable(config.rootCa) && url.length() > 26;
   if (!config.allowTrustedLanHttp || !url.startsWith("http://")) return false;
   const int slash = url.indexOf('/', 7);
   if (slash < 0) return false;
@@ -167,7 +168,8 @@ static bool upload(const Observation &observation, const char *&state, int &http
   if (length == 0) return false;
   NetworkClient plainClient;
   NetworkClientSecure secureClient;
-  secureClient.setCACert(uplinkConfig.rootCa);
+  state = "tls_trust_unavailable";
+  if (secure && !configureTlsTrust(secureClient, uplinkConfig.rootCa)) return false;
   secureClient.setHandshakeTimeout(3);
   NetworkClient &client = secure ? static_cast<NetworkClient &>(secureClient) : plainClient;
   HTTPClient http;
@@ -236,8 +238,15 @@ static void uplinkTask(void *) {
 }
 
 bool beginUplink(const UplinkConfig &config) {
+  if (strncmp(config.url, "https://", 8) == 0 && !tlsTrustAvailable(config.rootCa)) {
+    Serial.println("TLS trust unavailable: use an ESP32 core with a built-in CA bundle or configure rootCa");
+    return false;
+  }
   if (strlen(config.ssid) == 0 || strlen(config.deviceToken) < 32 ||
       strchr(config.deviceToken, '\r') || strchr(config.deviceToken, '\n') || !allowedUrl(config)) return false;
+  if (strncmp(config.url, "https://", 8) == 0) {
+    Serial.println(config.rootCa && config.rootCa[0] ? "TLS trust: explicit rootCa override" : "TLS trust: built-in public CA bundle");
+  }
   uplinkConfig = config;
   uploadQueue = xQueueCreate(1, sizeof(Observation));
   if (!uploadQueue) return false;

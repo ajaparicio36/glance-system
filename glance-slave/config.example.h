@@ -1,6 +1,6 @@
 #pragma once
 
-constexpr char deviceId[] = "slave-01";
+constexpr char deviceId[] = "prototype-001";
 const glance::GpsConfig gpsConfig = [] {
   glance::GpsConfig config;
   config.rxPin = -1;

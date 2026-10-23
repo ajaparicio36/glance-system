@@ -16,6 +16,30 @@ The explicit firmware task confirms Round 2 behavior after the root design and R
 
 ## Configure locally before powering modules
 
+### October 24 role and TLS update
+
+All three sketches still use the single canonical `GlanceFirmware` library. Prototype remains GPS + Wi-Fi; master remains radio + Wi-Fi with no GPS initialization; slave remains GPS + radio with no Wi-Fi initialization. Master and slave now match the prototype's bounded two-second serial wait, native-USB nonblocking prints and five-second alive/disabled heartbeat. Shared GPS and uplink diagnostics apply wherever those paths run. A heartbeat or `ready` is not proof of a fix, radio reception or delivery. Use USB CDC On Boot Enabled for all three native-USB C3 sketches, and monitor at 115200.
+
+Normal public HTTPS now uses the installed Arduino ESP32 **3.3.12 built-in public CA bundle**, with `rootCa=""`; no per-host CA download or PEM installation is required. This is the core's embedded trust store, not automatic trust of arbitrary servers or a live desktop/browser trust store. Bundle updates come with a maintained core and a new firmware build/flash. An explicit nonempty `rootCa` remains an optional private/custom-CA override: it replaces bundle selection for that request. A malformed, expired, unknown or wrong-host chain must fail TLS; an invalid explicit override never falls back to the bundle. Hostname, certificate time and chain verification stay enabled, and public HTTP remains forbidden.
+
+The exact installed `NetworkClientSecure.h/.cpp` declares and implements `void useBuiltinCACertBundle()`, selecting the native `esp_crt_bundle_attach` callback. The C3 `dio_qspi` and `qio_qspi` SDK configurations both enable `CONFIG_MBEDTLS_CERTIFICATE_BUNDLE` and `CONFIG_MBEDTLS_CERTIFICATE_BUNDLE_DEFAULT_FULL`. Read-only inspection of `esp32c3-libs/3.3.12/lib/libmbedtls.a` confirmed the attach function, embedded bundle start/end symbols and GTS Root R4 subject data. This establishes installed API/data/linkage availability, not a new Arduino link/build result. If a platform has no enabled default bundle and no explicit root, startup fails closed with `TLS trust unavailable`; no insecure fallback is present. TLS attachment/connection errors still fail uploads rather than accepting unverified certificates.
+
+Private prototype settings now select the bundle (`rootCa=""`), with all other prototype bytes unchanged. Master privately reuses that prototype's current hotspot, cloud endpoint and unchanged upload token, with cleartext opt-in disabled and an empty root for the bundle. Private identity stays `prototype-001` across prototype, slave and receiving master; existing radio key and hardware settings were preserved. Public examples now match this singleton ID and the configured public HTTPS endpoint, while Wi-Fi credentials/token/key remain empty. **Do not run prototype and slave/master simultaneously under this singleton identity.** The slave has no uplink/CA settings to populate.
+
+Pin/history audit: checked-in GPS/radio example pins have remained unassigned (`-1`) since the original implementation; no new verified radio pin map or band was supplied. Only the private prototype has the earlier user-confirmed MCU **RX20 ← GPS TX**, **TX21 → GPS RX**, 9600 baud and GPS verification flag enabled. That is user-reported wiring, not a new electrical measurement. Private slave GPS pins remain `-1` with its verification flag false; both radios retain pins `-1`, frequency `0` and verification false. Nothing was copied blindly from the prototype into slave/radio wiring, and these gates intentionally prevent master/slave operation until their actual wiring, power, antennas and legal band are confirmed.
+
+Focused host checks passed for full bundle, common bundle, missing bundle, enabled-without-default bundle and disabled bundle configurations, plus existing protocol and installed TinyGPSPlus parser/diagnostic regressions. The TLS test uses a client spy with the real method signatures: it proves selection/fail-closed/no-fallback branches, **not cryptographic rejection on ESP32 hardware**. Installed core source retains CA parsing, hostname setup and verification-result checks; installed mbedTLS documents client verification as REQUIRED by default, and archive inspection confirms the native verification callback. Ignored inspection evidence: `tools/firmware/.build/native-tls-audit.json`. No Arduino compilation, flash, serial/device action, live cloud upload or radio test was performed for this update; earlier build/device evidence below is historical and does not certify these new images.
+
+Run the new host selection checks from repository root with the existing compiler; omitted SDK defines exercise the unavailable-bundle case:
+
+```powershell
+$compiler = 'C:/ProgramData/mingw64/mingw64/bin/g++.exe'
+& $compiler -std=c++17 -Wall -Wextra -Werror -pedantic -DCONFIG_MBEDTLS_CERTIFICATE_BUNDLE=1 -DCONFIG_MBEDTLS_CERTIFICATE_BUNDLE_DEFAULT_FULL=1 -I tools/firmware/host-arduino -I libraries/GlanceFirmware/src tools/firmware/tls-check.cpp -o tools/firmware/tls-check.exe
+./tools/firmware/tls-check.exe
+& $compiler -std=c++17 -Wall -Wextra -Werror -pedantic -I tools/firmware/host-arduino -I libraries/GlanceFirmware/src tools/firmware/tls-check.cpp -o tools/firmware/tls-check-no-bundle.exe
+./tools/firmware/tls-check-no-bundle.exe
+```
+
 Private local settings are already prepared on this machine; do not replace them with examples or lose the provisioned Wi-Fi, upload token, and radio key. From the repository root, create only absent configuration files for the roles you are provisioning:
 
 ```powershell
@@ -31,7 +55,7 @@ Each role ignores its own `config.local.h`. Never put real credentials in the ch
 
 ### GPS settings
 
-- `deviceId`: configured server identity matching `^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$` (1–64 ASCII characters, first alphanumeric). Prototype example is `prototype-001`; slave example is `slave-01`. Provision the same source identity on the server and receiving master.
+- `deviceId`: configured server identity matching `^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$` (1–64 ASCII characters, first alphanumeric). All examples use `prototype-001` for the current server singleton. Provision the same source identity on the server and receiving master; never run the prototype and slave as concurrent sources for it.
 - `gpsConfig.rxPin`: MCU UART RX GPIO, connected to GPS **TX**. No pin mapping is assumed.
 - `gpsConfig.txPin`: MCU UART TX GPIO, connected to GPS **RX** only if required and verified; `-1` means do not attach a GPS RX wire. ESP32 UART RX-only configuration still requires checking the core/board's unused default TX behavior and keeping that physical wire disconnected.
 - `gpsConfig.baud`: `9600` is an editable bring-up starting point, not a measurement of the purchased module's configuration.
@@ -44,11 +68,11 @@ The parser consumes complete, checksum-valid RMC sentences containing an active 
 - `ssid`, `password`: actual verified bench network. An empty SSID disables startup; an open network can have an empty password.
 - `url`: full endpoint, such as `https://your-verified-host.example/api/locations`. No URL credentials, redirects, or CR/LF are accepted.
 - `deviceToken`: provision the server's upload-only DEVICE_TOKEN, at least 32 characters, with no CR/LF. Do not install the owner/app credential on firmware. Both prototype and master use upload-only credentials; the slave needs only its radio link key.
-- `rootCa`: for HTTPS, the trusted root CA PEM for the deployment's certificate chain, stored as a C++ raw string. Get it from the actual CA/operator, not an unverified guessed certificate. Hostname/chain/time verification stays enabled. No TLS bypass is present.
+- `rootCa`: leave empty for ordinary public HTTPS on the audited core; its built-in CA bundle verifies the host/chain/time. Set a nonempty trusted PEM only for an intentional private/custom-CA override, obtained from the actual CA/operator. Explicit invalid overrides fail TLS without falling back to the bundle. No TLS bypass is present.
 - `allowTrustedLanHttp`: false by default. Enable only on an explicitly trusted development LAN, with a literal private IPv4 URL such as `http://192.168.1.50:3000/api/locations`. Only RFC1918 IPv4 hosts are accepted for cleartext; DNS aliases, loopback, and public hosts are intentionally excluded. Tokens are exposed to LAN observers. Public/cloud deployment requires HTTPS.
 - `ntpServer`: defaults to `pool.ntp.org`; can be set on the local config to an operational time server. Master reception and HTTPS wait for valid system time (2024 or later). Master has no GPS clock; offline/no-time-sync master delivery is not promised.
 
-Example CA assignment in a local configuration lambda:
+Optional private/custom-CA override in a local configuration lambda (not needed for normal public HTTPS):
 
 ```cpp
 config.rootCa = R"PEM(-----BEGIN CERTIFICATE-----
@@ -57,7 +81,7 @@ PASTE THE ACTUAL TRUSTED CA PEM BODY HERE
 )PEM";
 ```
 
-That placeholder is not a certificate. Do not enable a deployment before replacing and verifying it. Flash contains credentials in plaintext; no secure-boot, encrypted flash, remote provisioning, or credential rotation mechanism is claimed.
+That placeholder is not a certificate; do not use it as an override. Leave `rootCa` empty for the native public bundle instead. Flash contains credentials in plaintext; no secure-boot, encrypted flash, remote provisioning, or credential rotation mechanism is claimed.
 
 ### Radio settings and hardware gate
 

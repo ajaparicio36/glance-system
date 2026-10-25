@@ -12,7 +12,7 @@ import { FenceConflict, liveUrl, requestSnapshot, ServerConnectionError, updateF
 import { DEFAULT_MAP_POSITION, fromMapCoordinate, initialMapCenter, toMapCoordinate } from '../src/components/live-map.geometry.ts';
 import { clientTimeZone, formatLocalTimestamp, historyPage } from '../src/tracking/presentation.ts';
 import { palettes } from '../src/tracking/colors.ts';
-import { parseSnapshot } from '../../shared/protocol.ts';
+import { parseSnapshot, parseSnapshotMessage } from '../../shared/protocol.ts';
 import { validatePolygon } from '../../shared/geofence.ts';
 
 const time = '2026-10-03T00:00:00.000Z';
@@ -85,6 +85,87 @@ assert.match(collectAlerts(returned, seen, false)[0], /returned inside/);
 assert.deepEqual(collectAlerts(returned, seen, false), []);
 assert.deepEqual(collectAlerts(outside, new Set(), true), []);
 assert.match(collectAlerts({ ...located, incidents: [{ ...incident, id: 2, resolution: 'fence_changed', resolvedAt: time }] }, seen, false).at(-1), /fence changed/);
+const twoTrackerHistory = Array.from({ length: 6 }, (_, index) => ({
+  ...incident,
+  id: index + 1,
+  deviceId: index % 2 === 0 ? 'prototype-001' : 'slave-02',
+  resolution: index % 2 === 0 ? 'returned' : 'fence_changed',
+  resolvedAt: time,
+  returnPosition: index % 2 === 0 ? { latitude: 11.1, longitude: 124.2, observedAt: time } : null,
+}));
+const twoTrackerBaseline = parseSnapshot({
+  ...located,
+  devices: [located.devices[0], {
+    deviceId: 'slave-02',
+    location: { latitude: 11.5, longitude: 124.7, observedAt: '2026-10-02T23:59:50.000Z', receivedAt: time },
+    boundaryStatus: 'inside',
+    activeViolationId: null,
+  }],
+  incidents: twoTrackerHistory,
+});
+const twoTrackers = parseSnapshot({
+  ...twoTrackerBaseline,
+  revision: 5,
+  devices: [twoTrackerBaseline.devices[0], { ...twoTrackerBaseline.devices[1], location: { ...twoTrackerBaseline.devices[1].location, latitude: 13 }, boundaryStatus: 'outside', activeViolationId: 7 }],
+  incidents: [...twoTrackerHistory, { ...incident, id: 7, deviceId: 'slave-02', outside: { latitude: 13, longitude: 124.7, observedAt: twoTrackerBaseline.devices[1].location.observedAt } }],
+});
+assert.deepEqual(twoTrackers.devices.map(device => [device.deviceId, toMapCoordinate(device.location), device.boundaryStatus, device.activeViolationId]), [
+  ['prototype-001', [124.2, 11.1], 'inside', null],
+  ['slave-02', [124.7, 13], 'outside', 7],
+]);
+assert.deepEqual(parseSnapshotMessage(JSON.parse(JSON.stringify({ type: 'snapshot', snapshot: twoTrackers }))).snapshot, twoTrackers);
+assert.deepEqual(parseCache(JSON.stringify(twoTrackers), 1000).snapshot, twoTrackers);
+assert.deepEqual(initialMapCenter([], [empty.devices[0], twoTrackers.devices[1]]), [124.7, 13]);
+const twoTrackerEntry = { snapshot: twoTrackers, savedAt: 1000 };
+assert.deepEqual(twoTrackers.devices.map(device => safetyLabel(device, twoTrackerEntry, 1000, true)), ['Inside geofence', 'Outside geofence']);
+assert.deepEqual(twoTrackers.devices.map(device => safetyLabel(device, twoTrackerEntry, 6000, true)), ['Inside geofence', 'Unknown · stale location']);
+assert.deepEqual(twoTrackers.devices.map(device => safetyLabel(device, twoTrackerEntry, 1000, false)), ['Unknown · disconnected', 'Unknown · disconnected']);
+const prototypeUpdated = parseSnapshot({
+  ...twoTrackers,
+  revision: 6,
+  serverTime: '2026-10-03T00:00:05.000Z',
+  devices: [{ ...twoTrackers.devices[0], location: { ...twoTrackers.devices[0].location, observedAt: '2026-10-03T00:00:05.000Z', receivedAt: '2026-10-03T00:00:05.000Z' } }, twoTrackers.devices[1]],
+});
+assert.equal(acceptsSnapshot(twoTrackers, prototypeUpdated), true);
+assert.deepEqual(prototypeUpdated.devices[1], twoTrackers.devices[1]);
+assert.deepEqual(prototypeUpdated.devices.map(device => safetyLabel(device, { snapshot: prototypeUpdated, savedAt: 6000 }, 6000, true)), ['Inside geofence', 'Unknown · stale location']);
+const bothOutside = parseSnapshot({
+  ...twoTrackers,
+  revision: 7,
+  devices: [{ ...twoTrackers.devices[0], location: { ...twoTrackers.devices[0].location, ...incident.outside }, boundaryStatus: 'outside', activeViolationId: 8 }, twoTrackers.devices[1]],
+  incidents: [...twoTrackers.incidents, { ...incident, id: 8 }],
+});
+const twoTrackerSeen = new Set();
+assert.deepEqual(collectAlerts(twoTrackerBaseline, twoTrackerSeen, true), []);
+assert.deepEqual(collectAlerts(bothOutside, twoTrackerSeen, false), ['slave-02 · geofence violation (#7)', 'prototype-001 · geofence violation (#8)']);
+assert.deepEqual(collectAlerts(bothOutside, twoTrackerSeen, false), []);
+const prototypeReturned = parseSnapshot({
+  ...bothOutside,
+  revision: 8,
+  devices: [twoTrackers.devices[0], twoTrackers.devices[1]],
+  incidents: bothOutside.incidents.map(episode => episode.id === 8 ? { ...episode, resolution: 'returned', resolvedAt: time, returnPosition: { latitude: 11.1, longitude: 124.2, observedAt: time } } : episode),
+});
+assert.deepEqual(collectAlerts(prototypeReturned, twoTrackerSeen, false), ['prototype-001 · returned inside (#8)']);
+assert.deepEqual(prototypeReturned.devices[1], bothOutside.devices[1]);
+const slaveFenceChanged = parseSnapshot({
+  ...prototypeReturned,
+  revision: 9,
+  geofence: { ...prototypeReturned.geofence, version: 2 },
+  devices: prototypeReturned.devices.map(device => ({ ...device, boundaryStatus: 'unknown', activeViolationId: null })),
+  incidents: prototypeReturned.incidents.map(episode => episode.id === 7 ? { ...episode, resolution: 'fence_changed', resolvedAt: time } : episode),
+});
+assert.deepEqual(collectAlerts(slaveFenceChanged, twoTrackerSeen, false), ['slave-02 · episode closed: fence changed (#7)']);
+assert.deepEqual(slaveFenceChanged.devices.map(device => device.location), twoTrackers.devices.map(device => device.location));
+const reconnectedSeen = new Set();
+assert.deepEqual(collectAlerts(bothOutside, reconnectedSeen, true), []);
+assert.deepEqual(collectAlerts(prototypeReturned, reconnectedSeen, true), []);
+assert.deepEqual(collectAlerts(prototypeReturned, reconnectedSeen, false), []);
+assert.deepEqual(collectAlerts(slaveFenceChanged, reconnectedSeen, false), ['slave-02 · episode closed: fence changed (#7)']);
+assert.deepEqual(historyPage(prototypeReturned.incidents, 0).incidents.map(episode => [episode.id, episode.deviceId]), [[8, 'prototype-001'], [7, 'slave-02'], [6, 'slave-02'], [5, 'prototype-001'], [4, 'slave-02']]);
+assert.deepEqual(historyPage(prototypeReturned.incidents, 1).incidents.map(episode => [episode.id, episode.deviceId]), [[3, 'prototype-001'], [2, 'slave-02'], [1, 'prototype-001']]);
+assert.throws(() => parseSnapshot({ ...bothOutside, devices: bothOutside.devices.map(device => ({ ...device, activeViolationId: device.deviceId === 'slave-02' ? 8 : 7 })) }), /Missing active incident/);
+assert.throws(() => parseSnapshot({ ...bothOutside, incidents: bothOutside.incidents.filter(episode => episode.id !== 7) }), /Missing active incident/);
+assert.throws(() => parseSnapshot({ ...bothOutside, devices: [bothOutside.devices[0], { ...bothOutside.devices[1], boundaryStatus: 'inside', activeViolationId: null }] }), /Unlinked active incident/);
 assert.throws(() => normalizeSettings({ serverUrl: 'http://public.example', ownerToken: 'synthetic-owner' }, null, 'android'));
 assert.throws(() => normalizeSettings({ serverUrl: 'https://example.com?token=secret', ownerToken: 'synthetic-owner' }, null, 'android'));
 assert.throws(() => normalizeSettings({ serverUrl: 'http://192.168.1.2', ownerToken: 'synthetic-owner' }, '192.168.1.2', 'ios'));
@@ -114,6 +195,9 @@ await cacheWrite(database, { ...row, revision: 0, payload: JSON.stringify(empty)
 await cacheWrite(database, { ...row, savedAt: 999, payload: 'older asynchronous write' });
 await cacheWrite(database, { ...row, savedAt: 3000, payload: 'duplicate timestamp must not reset freshness' });
 await cacheWrite(database, { ...row, scope: 'other-owner', revision: 0, payload: JSON.stringify(empty) });
+const twoTrackerRow = { ...row, scope: 'synthetic-two-tracker-scope', revision: twoTrackers.revision, payload: JSON.stringify(twoTrackers) };
+await cacheWrite(database, twoTrackerRow);
+await cacheWrite(database, { ...twoTrackerRow, revision: located.revision, payload: JSON.stringify(located), savedAt: 2000 });
 sqlite.close();
 sqlite = new DatabaseSync(databasePath);
 database = drizzle({ client: sqlite });
@@ -123,6 +207,11 @@ assert.equal(cached[0].savedAt, 1000);
 const duplicateRetained = parseCache(cached[0].payload, cached[0].savedAt);
 assert.equal(safetyLabel(duplicateRetained.snapshot.devices[0], duplicateRetained, 16000, true), 'Unknown · stale location');
 assert.equal((await database.select().from(snapshotCache).where(eq(snapshotCache.scope, 'other-owner')))[0].revision, 0);
+const twoTrackerCachedRow = (await database.select().from(snapshotCache).where(eq(snapshotCache.scope, twoTrackerRow.scope)))[0];
+const twoTrackerCached = parseCache(twoTrackerCachedRow.payload, twoTrackerCachedRow.savedAt);
+assert.deepEqual(twoTrackerCached, twoTrackerEntry);
+assert.deepEqual(twoTrackerCached.snapshot.devices.map(device => safetyLabel(device, twoTrackerCached, 6000, true)), ['Inside geofence', 'Unknown · stale location']);
+assert.deepEqual(historyPage(twoTrackerCached.snapshot.incidents, 1).incidents.map(episode => episode.deviceId), ['slave-02', 'prototype-001']);
 sqlite.close();
 unlinkSync(databasePath);
 
@@ -148,6 +237,8 @@ try {
   assert.equal((await requestSnapshot(settings)).revision, 2);
   await assert.rejects(updateFence(settings, vertices, 0), FenceConflict);
   assert.equal((await updateFence(settings, vertices, 1)).geofence.version, 2);
+  responseSnapshot = twoTrackers;
+  assert.deepEqual(await requestSnapshot(settings), twoTrackers);
   responseStatus = 401;
   await assert.rejects(requestSnapshot(settings), /OWNER_TOKEN.*DEVICE_TOKEN/);
   responseStatus = 404;
@@ -161,3 +252,4 @@ try {
 } finally { await new Promise(resolve => server.close(resolve)); }
 await assert.rejects(requestSnapshot(settings), /Cannot reach the backend/);
 console.log('PASS: initial empty-map origin and coordinate/tap-draft geometry, five-episode pagination/clamping/identity, detected local timezone formatting (UTC and Pacific/Honolulu) with unchanged wire timestamps, native gesture source wiring (not device behavior), strict cache parsing, monotonic durable Drizzle SQLite writes, server/owner isolation, freshness, alert dedup/baselines, polygon validation, contrast, HTTPS policy, HTTP bearer/version/conflict and sanitized connection-error client contract (synthetic local fixture).');
+console.log('PASS: prototype-001 + slave-02 HTTP/frame/cache round trips, durable two-tracker SQLite retention against older single-tracker writes, independent freshness/status, simultaneous linked episodes, per-device return/fence-change alerts and reconnect suppression, cross-device five-item history pagination (synthetic fixtures; no native rendering or hardware exercised).');

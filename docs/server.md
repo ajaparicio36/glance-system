@@ -2,6 +2,44 @@
 
 Node 24.13+ runs erasable TypeScript directly. Fastify 5, Drizzle and postgres-js use the canonical `shared/` modules and [protocol](protocol.md). There is no bundler, account registration, GPS trail, or process-only transaction mutex.
 
+## Configured two trackers — October 26
+
+Keep `DEVICE_ID=prototype-001` (Slave 1) and both existing tokens. Set `DEVICE_IDS=prototype-001,slave-02` to add Slave 2. Omitting `DEVICE_IDS` keeps the legacy single-device configuration. A supplied list must contain one or two unique IDs, include `DEVICE_ID`, and use the exact protocol identity syntax; spaces, empty entries, duplicate IDs and larger lists fail startup. `DEVICE_ID` remains required and must equal the database's original identity. Once seeded, every stored tracker must remain configured: startup refuses removal or replacement, even if that tracker has no fix. This deliberately provides no device CRUD or identity reassignment.
+
+Migration `0002.sql` runs with initialization under the existing advisory transaction lock. It copies the legacy location/status into `tracker_state`, preserves all incident rows and their IDs, and changes their device foreign key to the tracker table. `prototype_state` retains the global fence and monotonic revision; its legacy location/status columns are preserved as migration evidence and no longer updated. Startup atomically seeds missing configured identities with null location/unknown status. Adding an identity to an existing database increments revision once, independently of fence version; restarting with the same IDs does not increment revision. Nothing invents a GPS fix or transfers data between databases.
+
+Telemetry and fence replacement lock the singleton state row before reading/writing tracker state, so concurrent trackers, owner edits and snapshots see consistent committed state. Each tracker has its own latest observation/receipt time and active incident. Both can upload the same UTC timestamp. All active incidents remain in the bounded snapshot; returning one does not resolve the other. Fence replacement resolves every active episode without a return position and resets every tracker to unknown while keeping last coordinates. The next accepted fix reevaluates only its tracker.
+
+**Rollout/rollback gate:** back up the current database and quiesce every old server instance before migration. Old and new binaries must not overlap: old code writes the retained legacy location/status columns and reads only one tracker, while new code uses `tracker_state`. An old binary cannot safely roll back against new state, especially once Slave 2 incidents exist. Prefer a forward fix; restoring a pre-rollout backup requires an explicit recovery decision about post-backup data. Keep the new binary and both IDs on subsequent restarts. Coordinate any snapshot cache invalidation with a backup restore because revisions must not move backwards. Do not drop tables, rewrite identity, truncate incidents, or reset fence/revision to facilitate rollout.
+
+The tracker extension itself does not change transport policy. The separately requested Railway managed-edge implementation is described below. Existing Render Free edge approval remains platform-specific. All public clients still require certificate-verified HTTPS/wss. Deployment, private environment changes and real GPS checks belong to the coordinator.
+
+For the newly requested Railway project, a fresh PostgreSQL database avoids mixed legacy writers entirely: initialize the new server with both IDs, verify null positions/unknown states, then switch real upload destinations under coordinator control. Starting fresh does not copy Render history. Preserving that history requires a separately coordinated backup/restore with the old writer stopped before the final copy and no resumed old writes; do not present a fresh database as a history-preserving migration. No fresh synthetic fix should be sent to the cloud during readiness checks.
+
+Working two-tracker HTTP, snapshot, fence and WSS examples are in [protocol.md](protocol.md#runnable-node-24-usage). Against disposable data, configure both IDs, use the two-upload block, and use the existing owner GET/PUT/first-frame WSS examples: each snapshot includes both trackers. These examples are synthetic software checks, never live-history seeds.
+
+Verification commands from `glance-server`: `pnpm check`, `node ../shared/check.mjs`, and `pnpm test`. The full test command requires three different NEW empty dedicated databases: `TEST_DATABASE_URL` for the existing integration suite, `TEST_TWO_DATABASE_URL` for schema-0001 migration/two-tracker checks, and `TEST_RAILWAY_DATABASE_URL` for Railway mode/fresh two-tracker initialization. All names must match `glance_test_*`; tests refuse a nonempty public schema. For individual fixtures use `node --test test/two-tracker.test.ts` or `node --test test/railway-edge.test.ts`. The logging test remains database-free. Do not point these URLs at bench/cloud data.
+
+October 26 verification: Node 24.13.0, PostgreSQL 18.6 (`postgres:18-alpine`), strict TypeScript and shared checks passed. `node --test test/integration.test.ts test/two-tracker.test.ts test/upload-logging.test.ts` passed 5/5 in 36724ms against two fresh databases in one uniquely owned container. The migration fixture starts at schema 0001 with a fence, revision, last position, one open episode and one returned episode; it verifies preservation before adding Slave 2. It also verifies fail-closed configuration/identity retention, authorization, same-UTC two-device uploads, per-device timestamp rejection/return/staleness, both old active episodes within 100 entries, global fence replacement, concurrent snapshots/writers/version races, WSS and restart durability. The owned container and its anonymous volume were removed; unrelated containers were preserved. Ignored local harness/evidence: `glance-server/.test-run/two-tracker-pg.mjs` and `two-tracker-pg-latest.log`. These checks do not certify public Railway TLS, deployment, physical GPS or native app behavior.
+
+## Railway dedicated managed edge — October 26
+
+This is the implementation/deployment contract for the user-approved new dedicated Glance Railway project: only the trusted API and PostgreSQL services in the selected project/environment. It does not extend the Free-only Render ADR or claim a new accepted ADR. No untrusted service, sandbox or database public TCP proxy belongs in this boundary. Adding an untrusted private peer or changing ingress requires review before continuing this mode.
+
+Set `TRANSPORT_MODE=railway-edge`, `NODE_ENV=production`, `HOST=0.0.0.0`, the Railway-assigned `PORT`, private PostgreSQL `DATABASE_URL`, `DEVICE_ID=prototype-001`, `DEVICE_IDS=prototype-001,slave-02`, and the existing separate upload/owner tokens. Use Railway-provided `RAILWAY_PROJECT_ID`, `RAILWAY_ENVIRONMENT_ID` and `RAILWAY_SERVICE_ID`; startup requires UUID values and rejects missing or malformed markers. When Railway provides `RAILWAY_PUBLIC_DOMAIN`, it must be a hostname, without scheme, port, path or credentials. It is optional because a service can start before public-domain generation. Do not invent Render markers to start on Railway. Platform markers are accident guards, not proof of platform identity, network isolation or peer authentication.
+
+Railway's public edge terminates verified client TLS and forwards to the process. The process accepts the internal HTTP/WS hop and delegates public TLS enforcement to Railway. Fastify keeps `trustProxy:false`: forwarded protocol, host and IP headers have no security authority and cannot bypass device/owner authentication. The application does not prove that a request traversed the public edge. Private peers in the same project/environment can use HTTP; the approved boundary therefore trusts all such peers. Railway documents a WireGuard-encrypted mesh isolated by project AND environment. WireGuard network transport does not turn the process's HTTP listener into HTTPS or replace bearer authorization.
+
+Railway documents that inbound public traffic requires TLS, HTTP GET receives a 301 HTTPS redirect, and redirected HTTP POST becomes GET. Clients must call the final `https://` upload origin and `wss://` live origin directly with normal certificate verification; never send tokens over HTTP or rely on an upload redirect. Firmware uses the normal verified host/CA trust configuration, without `setInsecure`; native clients retain normal TLS verification. No forwarded-header exception, global cleartext setting or third secret is introduced. The existing exact-IP `https-proxy` checks, Render web-marker guard and production `trusted-local` rejection remain unchanged.
+
+Build using the repository root context and `glance-server/Dockerfile` so `/app/shared` and both SQL migrations are included. Secrets are runtime variables, never Docker build arguments. Startup initializes schema 0001/0002 and configured tracker rows inside the advisory-lock transaction before listening; there is no separate pre-deploy migration command. On the new empty Railway database the first snapshot has revision 0, null fence, no incidents, and both identities with null locations/unknown states. No synthetic cloud upload or fence mutation is needed to verify that seed. Restarts retain data; starting fresh does not import Render history. Use the private database URL and persistent PostgreSQL storage, with no public database TCP proxy.
+
+Coordinator post-deploy checks: verify public HTTP GET `/health` redirects without credentials; verify certificate-validated HTTPS `/health`, authenticated owner snapshot showing both empty trackers, unauthenticated/wrong-role rejection, and authenticated WSS. Do not claim public TLS or isolation from the local HTTP fixture. The [protocol examples](protocol.md#runnable-node-24-usage) cover owner snapshot, fence PUT, upload and first-frame WSS; use a disposable local database for synthetic writes and real GPS for later live uploads. Preserve the existing tokens and leave cloud resource/configuration changes to the coordinator.
+
+Sources provided by the coordinator from official Railway documentation: [public networking specifications](https://docs.railway.com/networking/public-networking/specs-and-limits) and [private networking operation](https://docs.railway.com/networking/private-networking/how-it-works).
+
+Local verification on October 26: `pnpm check` and `node ../shared/check.mjs` passed. With three new dedicated PostgreSQL 18.6 databases, `node --test test/integration.test.ts test/two-tracker.test.ts test/railway-edge.test.ts test/upload-logging.test.ts` passed 7/7 in 38166ms. Railway-specific checks cover missing/malformed UUID markers and optional hostname rejection, unchanged production transport guards, ignored forwarded protocol/host/IP, HTTP role separation and unknown/invalid uploads, two independently accepted trackers, zero unauthorized WSS snapshot frames, authorized two-device WSS snapshots, durable reload, and a fresh revision-0/null-fence/null-position seed. Existing exact-IP proxy, Render, migration and lifecycle checks also passed. Owned container `glance-two-tracker-cd093b41ddb9` and its anonymous volume were removed; unrelated containers were preserved. The ignored harness/evidence remain `glance-server/.test-run/two-tracker-pg.mjs` and `two-tracker-pg-latest.log`. No Railway operation or public TLS/isolation check was performed by this worker.
+
 ## Trusted local development
 
 Use a trusted private LAN only: HTTP/ws exposes upload and owner credentials to observers. Keep Windows firewall access limited to that LAN. `TRANSPORT_MODE=trusted-local` is an explicit development exception; production rejects it.
@@ -18,7 +56,7 @@ node tools/dev/start-local.mjs
 cd glance-server
 pnpm install --frozen-lockfile
 pnpm check
-'DATABASE_URL','DEVICE_ID','DEVICE_TOKEN','OWNER_TOKEN','TRANSPORT_MODE','HOST','PORT','NODE_ENV','TRUSTED_PROXY' | ForEach-Object { Remove-Item "Env:$_" -ErrorAction SilentlyContinue }
+'DATABASE_URL','DEVICE_ID','DEVICE_IDS','DEVICE_TOKEN','OWNER_TOKEN','TRANSPORT_MODE','HOST','PORT','NODE_ENV','TRUSTED_PROXY' | ForEach-Object { Remove-Item "Env:$_" -ErrorAction SilentlyContinue }
 pnpm start
 ```
 
@@ -184,7 +222,7 @@ Focused regression command: `pnpm exec node --test test/upload-logging.test.ts`.
 
 ## Real integration check
 
-Use a **new, dedicated** `glance_test_*` database on every run; the test refuses a nonempty public schema and never clears an existing database. Example temporary Docker database from the repository root, once the engine is running:
+Use **three new, dedicated** `glance_test_*` databases on every full-suite run; the tests refuse a nonempty public schema and never clear an existing database. Example temporary Docker database from the repository root, once the engine is running:
 
 ```powershell
 $name = 'glance-backend-check-' + [Guid]::NewGuid().ToString('N')
@@ -199,6 +237,10 @@ try {
   $mapping = docker port $name 5432/tcp
   $port = ($mapping -split ':')[-1]
   $env:TEST_DATABASE_URL = "postgres://glance_test_admin:$password@127.0.0.1:$port/glance_test_backend"
+  docker exec $name createdb -U glance_test_admin glance_test_two_backend
+  $env:TEST_TWO_DATABASE_URL = "postgres://glance_test_admin:$password@127.0.0.1:$port/glance_test_two_backend"
+  docker exec $name createdb -U glance_test_admin glance_test_railway_backend
+  $env:TEST_RAILWAY_DATABASE_URL = "postgres://glance_test_admin:$password@127.0.0.1:$port/glance_test_railway_backend"
   Push-Location glance-server
   try { pnpm check; pnpm test } finally { Pop-Location }
 } finally { docker rm -f -v $name }

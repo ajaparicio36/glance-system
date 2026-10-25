@@ -68,6 +68,14 @@ const outside = { latitude: 10, longitude: 124.5, observedAt };
 const incident = { id: 1, deviceId: observation.deviceId, outside, resolution: null, resolvedAt: null, returnPosition: null };
 const breached = { ...snapshot, devices: [{ ...snapshot.devices[0], boundaryStatus: 'outside', activeViolationId: 1 }], incidents: [incident] };
 assert.deepEqual(parseSnapshot(breached), breached);
+const twoTrackers = {
+  ...breached,
+  devices: [...breached.devices, { ...breached.devices[0], deviceId: 'slave-02', activeViolationId: 2 }],
+  incidents: [...breached.incidents, { ...incident, id: 2, deviceId: 'slave-02' }],
+};
+assert.deepEqual(parseSnapshot(twoTrackers), twoTrackers);
+assert.throws(() => parseSnapshot({ ...twoTrackers, devices: [twoTrackers.devices[0], { ...twoTrackers.devices[1], activeViolationId: 1 }] }), TypeError);
+assert.throws(() => parseSnapshot({ ...twoTrackers, incidents: [incident] }), TypeError);
 for (const validId of ['A', 'tracker_01.test-1', 'A'.repeat(64)]) {
   assert.equal(parsePositionObservation({ ...observation, deviceId: validId }).deviceId, validId);
   assert.equal(parseSnapshot({ ...breached, devices: [{ ...breached.devices[0], deviceId: validId }], incidents: [{ ...incident, deviceId: validId }] }).devices[0].deviceId, validId);

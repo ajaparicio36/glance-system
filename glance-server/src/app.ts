@@ -101,10 +101,10 @@ export async function createApp(config: Config, store: Store, logger: boolean | 
     },
   }, async (request, reply) => {
     const observation = parsePositionObservation(request.body);
-    if (observation.deviceId !== config.deviceId) return reply.code(403).send({ error: 'Device not configured' });
+    if (!config.deviceIds.includes(observation.deviceId)) return reply.code(403).send({ error: 'Device not configured' });
     const result = await store.accept(observation);
     request.log.info({
-      deviceId: config.deviceId,
+      deviceId: observation.deviceId,
       latitude: observation.latitude,
       longitude: observation.longitude,
       observedAt: observation.observedAt,

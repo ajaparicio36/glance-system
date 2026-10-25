@@ -269,7 +269,7 @@ test('real PostgreSQL, HTTP, websocket, lifecycle, durability and concurrent wri
     await new Promise<void>(resolve => { reservation.close(() => { resolve(); }); });
     const child = spawn(process.execPath, ['src/main.ts'], {
       cwd: new URL('..', import.meta.url),
-      env: { ...process.env, DATABASE_URL: databaseUrl, DEVICE_ID: config.deviceId, DEVICE_TOKEN: config.deviceToken, OWNER_TOKEN: config.ownerToken, TRANSPORT_MODE: 'trusted-local', NODE_ENV: 'test', HOST: '127.0.0.1', PORT: String(address.port) },
+      env: { ...process.env, DATABASE_URL: databaseUrl, DEVICE_ID: config.deviceId, DEVICE_IDS: config.deviceIds.join(','), DEVICE_TOKEN: config.deviceToken, OWNER_TOKEN: config.ownerToken, TRANSPORT_MODE: 'trusted-local', NODE_ENV: 'test', HOST: '127.0.0.1', PORT: String(address.port) },
       windowsHide: true,
       stdio: ['ignore', 'pipe', 'pipe'],
     });

@@ -13,9 +13,15 @@ export const state = pgTable('prototype_state', {
 
 export const incidents = pgTable('incidents', {
   id: bigserial('id', { mode: 'number' }).primaryKey(),
-  deviceId: text('device_id').notNull().references(() => state.deviceId),
+  deviceId: text('device_id').notNull().references(() => trackers.deviceId),
   outside: jsonb('outside').$type<Incident['outside']>().notNull(),
   resolution: text('resolution').$type<Incident['resolution']>(),
   resolvedAt: text('resolved_at'),
   returnPosition: jsonb('return_position').$type<Incident['returnPosition']>(),
 }, table => [uniqueIndex('one_active_incident').on(table.deviceId).where(sql`${table.resolution} is null`)]);
+
+export const trackers = pgTable('tracker_state', {
+  deviceId: text('device_id').primaryKey(),
+  location: jsonb('location').$type<Location>(),
+  boundaryStatus: text('boundary_status').$type<BoundaryStatus>().notNull().default('unknown'),
+});

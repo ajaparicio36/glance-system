@@ -4,7 +4,7 @@ import { createStore } from './store.ts';
 
 try {
   const config = readConfig();
-  const store = await createStore(config.databaseUrl, config.deviceId);
+  const store = await createStore(config.databaseUrl, config.deviceId, config.deviceIds);
   const app = await createApp(config, store).catch(async error => { await store.close(); throw error; });
   const shutdown = (): void => {
     const deadline = setTimeout(() => { process.exit(1); }, 10000);

@@ -2,6 +2,8 @@
 
 Frozen integration contract, 3 October 2026; accepted behavior: ADR-0004. Route implementation and end-to-end verification belong to server/app/firmware owners; this document does not certify them.
 
+October 26 extension: one owner and one polygon now serve one or two explicitly configured trackers. Keep `DEVICE_ID=prototype-001` for Slave 1 and its history; opt into Slave 2 with server `DEVICE_IDS=prototype-001,slave-02`. Omit `DEVICE_IDS` for legacy single-device operation. Both trackers share the existing upload token; the separate owner token is unchanged. No device registration or management route is added. The server rejects valid but unconfigured upload identities with 403 before storage.
+
 ## Shared modules
 
 - `shared/protocol.ts`: `Coordinate`, `PositionObservation`, `Geofence`, `Location`, `BoundaryStatus`, `TrackerSnapshot`, `Incident`, `Snapshot`, `GeofenceUpdate`, `LocationAcceptance`, `AuthenticateMessage`, `SnapshotMessage`; strict throwing parsers `parseTimestamp`, `parsePositionObservation`, `parseGeofenceUpdate`, `parseAuthenticateMessage`, `parseSnapshot`, `parseSnapshotMessage`.
@@ -36,7 +38,7 @@ Revision and expectedVersion are nonnegative safe integers; fence version and in
 | Endpoint | Authorization | Request / success |
 | --- | --- | --- |
 | `GET /health` | Public | Nonsecret health; not a readiness/security guarantee. |
-| `POST /api/locations` | `Bearer DEVICE_TOKEN` | PositionObservation; HTTP 200 `{accepted:boolean,revision:number}`. Configured deviceId must match. |
+| `POST /api/locations` | `Bearer DEVICE_TOKEN` | PositionObservation; HTTP 200 `{accepted:boolean,revision:number}`. deviceId must belong to the configured allowlist. |
 | `GET /api/snapshot` | `Bearer OWNER_TOKEN` | Snapshot directly, no envelope. |
 | `PUT /api/geofence` | `Bearer OWNER_TOKEN` | `{vertices:Coordinate[],expectedVersion:number}`; HTTP 200 updated Snapshot; 409 on version conflict. Use 0 when no fence exists. |
 | `GET /api/live` | RFC6455 first-frame authorization | First JSON `{type:'authenticate',token:OWNER_TOKEN}` within 5 seconds; authorized updates `{type:'snapshot',snapshot:Snapshot}`. |
@@ -47,9 +49,28 @@ Upload interval is 5000ms; a location is stale when either observation age or ac
 
 Serialize fence mutation and telemetry state changes inside PostgreSQL transactions, with uniqueness protection for one active episode per device. Persist monotonic revision atomically with state. Fence edits compare only fence version, never telemetry revision. Native cache rejects older revisions; equal revisions may refresh serverTime but must not create duplicate foreground alerts. Time passage changes display freshness without creating a revision or episode. Preserve all server episodes; project the newest 100 by ID including active episodes (reserve room for an older active episode), with devices' active IDs always resolvable. No GPS trail.
 
+Snapshots contain every configured tracker, ordered by device ID, including identities with null location/unknown status. Timestamp ordering, accepted receipt time, boundary state and active episode are independent per tracker: both may upload the same GPS UTC timestamp. Revision is global. Returning one tracker resolves only its episode. Fence replacement closes all active episodes as `fence_changed`, retains both last positions, resets both states to unknown, and waits for each tracker's next accepted fresh fix. The 100-episode projection reserves space for both active episodes, even when older than the newest 100. Shared parsers already validate multiple tracker entries and each active-episode linkage; the wire shape is unchanged.
+
 ## Runnable Node 24 usage
 
 Set BASE_URL, DEVICE_TOKEN, and OWNER_TOKEN in the environment; use the actual endpoint and fresh GPS observation for hardware runs. This local example uses a clearly synthetic point/time solely to exercise the HTTP contract, not to prove live GPS.
+
+Run synthetic writes only against a disposable local database, never the live bench/cloud history. For two-tracker verification set server `DEVICE_IDS=prototype-001,slave-02` first, then use this replacement upload block in the example below. Snapshot GET, fence PUT, and authenticated live frames all return both devices:
+
+```js
+const observedAt = new Date().toISOString();
+for (const deviceId of ['prototype-001', 'slave-02']) {
+  const response = await fetch(`${base}/api/locations`, {
+    method: 'POST',
+    headers: {Authorization: `Bearer ${process.env.DEVICE_TOKEN}`, 'Content-Type': 'application/json'},
+    body: JSON.stringify({deviceId, latitude: 11.123456, longitude: 124.123456, observedAt})
+  });
+  if (!response.ok) throw new Error(`Upload failed: ${response.status}`);
+  console.log(deviceId, await response.json());
+}
+const snapshot = await (await fetch(`${base}/api/snapshot`, {headers: ownerHeaders})).json();
+console.log(snapshot.devices.map(device => ({deviceId: device.deviceId, activeViolationId: device.activeViolationId})));
+```
 
 ```js
 const base = process.env.BASE_URL ?? 'http://localhost:3000';

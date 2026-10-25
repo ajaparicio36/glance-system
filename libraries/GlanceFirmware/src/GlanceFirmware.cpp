@@ -1,5 +1,6 @@
 #include "GlanceFirmware.h"
 #include "GlanceTls.h"
+#include "GlanceSources.h"
 #include <ArduinoJson.h>
 #include <HTTPClient.h>
 #include <NetworkClientSecure.h>
@@ -27,10 +28,10 @@ static uint32_t gpsObservations = 0;
 static uint32_t lastGpsReportMs = 0;
 static const char *gpsState = "no_rmc";
 static UplinkConfig uplinkConfig;
-static QueueHandle_t uploadQueue = nullptr;
+static QueueHandle_t uploadQueues[sourceSlots] = {};
 static RadioConfig radioConfig;
 static uint8_t radioKey[32] = {};
-static char lastRadioTimestamp[25] = {};
+static SourceReplay radioSources;
 static uint32_t transmissionStartedMs = 0;
 static bool radioTransmitting = false;
 
@@ -193,43 +194,45 @@ static void uplinkTask(void *) {
   WiFi.setAutoReconnect(false);
   configTime(0, 0, uplinkConfig.ntpServer);
   uint32_t lastConnectMs = millis() - 10000;
-  uint32_t lastAttemptMs = millis() - observationIntervalMs;
-  Observation pending;
-  bool hasPending = false;
+  PendingUplinks pending;
+  pending.configure(uplinkConfig.deviceId, uplinkConfig.secondDeviceId);
   uint32_t lastReportMs = millis() - observationIntervalMs / 2;
   uint32_t attempts = 0;
-  uint32_t expired = 0;
   int lastHttpStatus = 0;
   const char *uploadState = "awaiting_observation";
+  const char *lastDeviceId = "none";
   for (;;) {
-    Observation incoming;
-    if (xQueueReceive(uploadQueue, &incoming, 0) == pdTRUE) {
-      pending = incoming;
-      hasPending = true;
-      uploadState = "queued";
+    for (size_t slot = 0; slot < sourceSlots; ++slot) {
+      Observation incoming;
+      if (uploadQueues[slot] && xQueueReceive(uploadQueues[slot], &incoming, 0) == pdTRUE) {
+        timeval receivedTime;
+        gettimeofday(&receivedTime, nullptr);
+        if (pending.store(incoming, millis(), static_cast<int64_t>(receivedTime.tv_sec) * 1000 + receivedTime.tv_usec / 1000)) {
+          uploadState = "queued";
+        }
+      }
     }
     const uint32_t now = millis();
+    timeval wallTime;
+    gettimeofday(&wallTime, nullptr);
+    const int64_t wallTimeMs = static_cast<int64_t>(wallTime.tv_sec) * 1000 + wallTime.tv_usec / 1000;
     if (WiFi.status() != WL_CONNECTED && static_cast<uint32_t>(now - lastConnectMs) >= 10000) {
       WiFi.disconnect();
       WiFi.begin(uplinkConfig.ssid, uplinkConfig.password);
       lastConnectMs = now;
     }
-    timeval wallTime;
-    gettimeofday(&wallTime, nullptr);
-    if (hasPending && !freshAt(pending, now, static_cast<int64_t>(wallTime.tv_sec) * 1000 + wallTime.tv_usec / 1000)) {
-      hasPending = false;
-      ++expired;
-      uploadState = "expired_or_clock_skew";
-    }
-    if (hasPending && WiFi.status() == WL_CONNECTED && static_cast<uint32_t>(now - lastAttemptMs) >= observationIntervalMs) {
-      lastAttemptMs = now;
+    const uint32_t previousExpired = pending.expired;
+    const int due = pending.nextDue(now, wallTimeMs, WiFi.status() == WL_CONNECTED);
+    if (pending.expired != previousExpired) uploadState = "expired_or_clock_skew";
+    if (due >= 0) {
       ++attempts;
-      if (upload(pending, uploadState, lastHttpStatus)) hasPending = false;
+      lastDeviceId = due == 0 ? uplinkConfig.deviceId : uplinkConfig.secondDeviceId;
+      if (upload(pending.latest[due], uploadState, lastHttpStatus)) pending.hasPending[due] = false;
     }
     if (static_cast<uint32_t>(now - lastReportMs) >= observationIntervalMs) {
-      Serial.printf("Uplink wifi=%d pending=%u state=%s attempts=%lu http=%d expired=%lu clock=%s\n",
-                    static_cast<int>(WiFi.status()), static_cast<unsigned>(hasPending), uploadState,
-                    static_cast<unsigned long>(attempts), lastHttpStatus, static_cast<unsigned long>(expired),
+      Serial.printf("Uplink wifi=%d pending=%u device=%s state=%s attempts=%lu http=%d expired=%lu clock=%s\n",
+                    static_cast<int>(WiFi.status()), pending.pendingCount(), lastDeviceId, uploadState,
+                    static_cast<unsigned long>(attempts), lastHttpStatus, static_cast<unsigned long>(pending.expired),
                     wallTime.tv_sec >= 1704067200 ? "ready" : "unset");
       lastReportMs = now;
     }
@@ -242,24 +245,38 @@ bool beginUplink(const UplinkConfig &config) {
     Serial.println("TLS trust unavailable: use an ESP32 core with a built-in CA bundle or configure rootCa");
     return false;
   }
-  if (strlen(config.ssid) == 0 || strlen(config.deviceToken) < 32 ||
+  if (!validSourceIds(config.deviceId, config.secondDeviceId) || strlen(config.ssid) == 0 || strlen(config.deviceToken) < 32 ||
       strchr(config.deviceToken, '\r') || strchr(config.deviceToken, '\n') || !allowedUrl(config)) return false;
   if (strncmp(config.url, "https://", 8) == 0) {
     Serial.println(config.rootCa && config.rootCa[0] ? "TLS trust: explicit rootCa override" : "TLS trust: built-in public CA bundle");
   }
   uplinkConfig = config;
-  uploadQueue = xQueueCreate(1, sizeof(Observation));
-  if (!uploadQueue) return false;
+  for (size_t slot = 0; slot < sourceSlots; ++slot) {
+    if (slot == 1 && config.secondDeviceId[0] == '\0') continue;
+    uploadQueues[slot] = xQueueCreate(1, sizeof(Observation));
+    if (!uploadQueues[slot]) {
+      for (size_t previous = 0; previous < slot; ++previous) {
+        vQueueDelete(uploadQueues[previous]);
+        uploadQueues[previous] = nullptr;
+      }
+      return false;
+    }
+  }
   if (xTaskCreate(uplinkTask, "glance-uplink", 8192, nullptr, 1, nullptr) != pdPASS) {
-    vQueueDelete(uploadQueue);
-    uploadQueue = nullptr;
+    for (size_t slot = 0; slot < sourceSlots; ++slot) {
+      if (uploadQueues[slot]) vQueueDelete(uploadQueues[slot]);
+      uploadQueues[slot] = nullptr;
+    }
     return false;
   }
   return true;
 }
 
 void queueUpload(const Observation &observation) {
-  if (uploadQueue && validObservation(observation) && fresh(observation, millis())) xQueueOverwrite(uploadQueue, &observation);
+  const int slot = sourceIndex(observation.deviceId, uplinkConfig.deviceId, uplinkConfig.secondDeviceId);
+  if (slot >= 0 && uploadQueues[slot] && validObservation(observation) && fresh(observation, millis())) {
+    xQueueOverwrite(uploadQueues[slot], &observation);
+  }
 }
 
 bool disjointGpsRadioPins(const GpsConfig &gps, const RadioConfig &radio) {
@@ -276,10 +293,11 @@ static int hexDigit(char character) {
 }
 
 bool beginRadio(const RadioConfig &config) {
-  if (!config.wiringAndBandVerified || !validDeviceId(config.sourceDeviceId) || strlen(config.keyHex) != 64 ||
+  if (!config.wiringAndBandVerified || !validSourceIds(config.sourceDeviceId, config.secondSourceDeviceId) || strlen(config.keyHex) != 64 ||
       config.frequencyHz < 137000000 || config.frequencyHz > 1020000000 || config.txPowerDbm < 2 || config.txPowerDbm > 17) return false;
   const int pins[] = {config.sckPin, config.misoPin, config.mosiPin, config.csPin, config.resetPin, config.dio0Pin};
   for (size_t index = 0; index < 6; ++index) {
+    if (index == 4 && pins[index] == -1) continue;
     if ((index == 1 || index == 5) ? !inputPin(pins[index]) : !outputPin(pins[index])) return false;
     for (size_t previous = 0; previous < index; ++previous) if (pins[previous] == pins[index]) return false;
   }
@@ -293,6 +311,7 @@ bool beginRadio(const RadioConfig &config) {
   }
   if (nonzero == 0) return false;
   radioConfig = config;
+  radioSources.configure(config.sourceDeviceId, config.secondSourceDeviceId);
   if (!SPI.begin(config.sckPin, config.misoPin, config.mosiPin, config.csPin)) return false;
   LoRa.setPins(config.csPin, config.resetPin, config.dio0Pin);
   if (!LoRa.begin(config.frequencyHz)) return false;
@@ -364,7 +383,7 @@ bool receiveRadio(Observation &observation) {
       !document["observedAt"].is<const char *>() || !document["latitude"].is<double>() || !document["longitude"].is<double>()) return false;
   const char *deviceId = document["deviceId"].as<const char *>();
   const char *timestamp = document["observedAt"].as<const char *>();
-  if (strcmp(deviceId, radioConfig.sourceDeviceId) != 0 || !validDeviceId(deviceId) || !validTimestamp(timestamp)) return false;
+  if (sourceIndex(deviceId, radioConfig.sourceDeviceId, radioConfig.secondSourceDeviceId) < 0 || !validDeviceId(deviceId) || !validTimestamp(timestamp)) return false;
   Observation candidate;
   strcpy(candidate.deviceId, deviceId);
   strcpy(candidate.observedAt, timestamp);
@@ -373,11 +392,11 @@ bool receiveRadio(Observation &observation) {
   candidate.receivedAtMs = millis();
   timeval now;
   gettimeofday(&now, nullptr);
-  if (!validObservation(candidate) || !newerThan(candidate, lastRadioTimestamp) || now.tv_sec < 1704067200) return false;
+  if (!validObservation(candidate) || now.tv_sec < 1704067200) return false;
   const int64_t ageMs = static_cast<int64_t>(now.tv_sec) * 1000 + now.tv_usec / 1000 - timestampMilliseconds(candidate.observedAt);
   if (!acceptableAge(ageMs)) return false;
   candidate.receivedAtMs -= static_cast<uint32_t>(ageMs > 0 ? ageMs : 0);
-  strcpy(lastRadioTimestamp, candidate.observedAt);
+  if (!radioSources.accept(candidate, millis(), static_cast<int64_t>(now.tv_sec) * 1000 + now.tv_usec / 1000)) return false;
   observation = candidate;
   return true;
 }

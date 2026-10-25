@@ -20,6 +20,8 @@ struct UplinkConfig {
   const char *deviceToken = "";
   const char *rootCa = "";
   const char *ntpServer = "pool.ntp.org";
+  const char *deviceId = "prototype-001";
+  const char *secondDeviceId = "";
   bool allowTrustedLanHttp = false;
 };
 
@@ -34,6 +36,7 @@ struct RadioConfig {
   int txPowerDbm = 2;
   const char *keyHex = "";
   const char *sourceDeviceId = "";
+  const char *secondSourceDeviceId = "";
   bool wiringAndBandVerified = false;
 };
 

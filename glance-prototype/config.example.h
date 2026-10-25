@@ -13,9 +13,10 @@ const glance::UplinkConfig uplinkConfig = [] {
   glance::UplinkConfig config;
   config.ssid = "";
   config.password = "";
-  config.url = "https://glance-server-qo82.onrender.com/api/locations";
+  config.url = "https://glance-server-production.up.railway.app/api/locations";
   config.deviceToken = "";
   config.rootCa = "";
+  config.deviceId = deviceId;
   config.allowTrustedLanHttp = false;
   return config;
 }();

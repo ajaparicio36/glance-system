@@ -14,7 +14,7 @@ These are user-established targets, not claims that every component is implement
 
 | Directory | Responsibility |
 | --- | --- |
-| `glance-prototype/` | GPS + WiFi single-node demonstration for Monday October 5, 2026. |
+| `glance-prototype/` | Historical GPS + WiFi demonstration/fallback; its board is now Slave 1, not a concurrent source with the same ID. |
 | `glance-master/` | No GPS; WiFi uplink for the master role. |
 | `glance-slave/` | GPS + LoRa tracker role. |
 | `glance-server/` | Fastify, PostgreSQL, and Drizzle; development Docker runs the database only, production includes the server. |
@@ -23,14 +23,15 @@ These are user-established targets, not claims that every component is implement
 - Firmware uses the Arduino core for ESP32-C3; hardware/Arduino CLI milestone is Sunday October 4, 2026.
 - Reuse actual ownership and existing code; do not duplicate scaffolding or create parallel implementations of the same responsibility.
 - Accepted Round 1 scope/authority: `docs/adr/0001-prototype-geofence-authority.md`; transport/access: `docs/adr/0002-prototype-transport-and-access.md`; power gate: `docs/adr/0003-usb-demo-and-power-deferral.md`.
+- For two-tracker roles/identity, manual slave flash selection, or Railway deployment/retention, read accepted `docs/adr/0006-two-tracker-gateway.md`: two GPS slaves, one GPS-free master, one owner/fence; retain `prototype-001` and add `slave-02`.
 - Monday requires live GPS position and working geofence violation/return reporting; labelled synthetic fixtures may supplement difficult movement tests, not replace live GPS.
 - Prototype geofence authority is the server; SQLite is a local cache. This deliberately diverges from thesis master-side evaluation; offline master authority is not promised.
-- Use HTTP(S) POST uploads and RFC6455 WebSockets, configured single-owner/device identity, and separate pre-shared device-upload/owner credentials; the owner can read/subscribe and edit its singleton fence. No registration or third secret.
+- Use HTTP(S) POST uploads and RFC6455 WebSockets, one owner and a bounded one-or-two-tracker allowlist, and separate pre-shared shared-upload/owner credentials; the owner can read/subscribe and edit its singleton fence. No registration or third API secret.
 - Cleartext HTTP/ws is only an explicit trusted-local-development exception exposing tokens to network observers; cloud requires HTTPS/wss with certificate verification. Never use `setInsecure` or global cleartext/TLS weakening.
-- Accepted Free-only Render edge boundary: `docs/adr/0005-render-free-edge.md`; preserve verified client HTTPS/wss, ignore forwarded headers, and reevaluate before paid/private ingress.
+- Render Free edge remains scoped to `docs/adr/0005-render-free-edge.md`; Railway uses ADR-0006's dedicated API/PostgreSQL project/environment trust assumption, not runtime-enforced peer isolation. Preserve verified client HTTPS/wss, ignore forwarded headers, and reevaluate before expanding either ingress boundary.
 - Use verified USB demo power; defer battery/solar integration. User-reported 1000mAh inventory does not validate ratings, wiring, weight, or runtime.
 - Accepted Round 2 lifecycle/cadence/access is `docs/adr/0004-prototype-lifecycle-and-contract.md`; exact shared types and API are `shared/protocol.ts` and `docs/protocol.md`. Initial outside opens one episode; boundary is inside; return resolves it; replacement closes it as `fence_changed`.
-- Upload every 5 seconds; stale after 15 seconds without accepted fresh data. Retain last coordinates and episode history, not a GPS trail; foreground alerts only. GPS jitter calibration, production LoRa band/pins, and native/hardware compatibility remain verification or later-decision work.
+- Upload every 5 seconds per tracker; stale after 15 seconds without accepted fresh data per tracker. Replay/freshness and active episodes are device-specific; one global fence/revision remains. Retain last coordinates and episode history, not a GPS trail; foreground alerts only. GPS jitter calibration, production LoRa band/pins, and native/hardware compatibility remain verification or later-decision work.
 - Separate observed implementation facts, user requirements, proposals, and accepted decisions.
 - Do not invent glossary entries or accepted ADRs; record resolved terminology/decisions only after confirmation.
 

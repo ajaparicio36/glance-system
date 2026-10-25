@@ -1,12 +1,15 @@
 #include <GlanceFirmware.h>
+#include <GlanceSources.h>
 #if __has_include("config.local.h")
 #include "config.local.h"
 #else
 #include "config.example.h"
 #endif
 
-static bool ready = false;
+static bool gpsReady = false;
+static bool radioReady = false;
 static uint32_t lastStatusMs = 0;
+static glance::StaggeredRadio radioPending;
 
 void setup() {
   Serial.begin(115200);
@@ -15,24 +18,30 @@ void setup() {
 #endif
   const uint32_t serialWaitStartedMs = millis();
   while (!Serial && static_cast<uint32_t>(millis() - serialWaitStartedMs) < 2000) delay(10);
-  ready = glance::validDeviceId(deviceId) && strcmp(deviceId, radioConfig.sourceDeviceId) == 0 &&
-          glance::disjointGpsRadioPins(gpsConfig, radioConfig) && glance::beginGps(gpsConfig) && glance::beginRadio(radioConfig);
-  Serial.println(ready ? "Slave ready: awaiting live GPS" : "Slave disabled: verify configuration");
+  gpsReady = glance::validDeviceId(deviceId) && strcmp(deviceId, radioConfig.sourceDeviceId) == 0 &&
+             glance::disjointGpsRadioPins(gpsConfig, radioConfig) && glance::beginGps(gpsConfig);
+  radioReady = gpsReady && glance::beginRadio(radioConfig);
+  Serial.println(gpsReady ? "Slave GPS active: awaiting live fix" : "Slave GPS disabled: verify identity/GPS/pin separation");
+  Serial.println(radioReady ? "Slave radio ready (not proof of delivery)" : "Slave radio disabled: verify band/wiring/power/antenna");
   lastStatusMs = millis();
 }
 
 void loop() {
-  if (ready) {
-    glance::serviceRadioTransmission();
+  if (gpsReady) {
+    if (radioReady) glance::serviceRadioTransmission();
     glance::Observation observation;
     if (glance::pollGps(deviceId, observation)) {
-      Serial.println(glance::sendRadio(observation) ? "Observation transmitted asynchronously" : "Radio observation dropped");
+      radioPending.store(observation, deviceId, radioReady, millis());
+      if (!radioReady) Serial.println("GPS observation ready; radio disabled (not transmitted)");
     }
   }
   const uint32_t now = millis();
+  if (radioPending.due(deviceId, gpsReady && radioReady, now)) {
+    Serial.println(glance::sendRadio(radioPending.observation) ? "Observation transmitted asynchronously" : "Radio observation dropped");
+  }
   if (static_cast<uint32_t>(now - lastStatusMs) >= 5000) {
-    Serial.printf("Slave alive, uptime %lu s: %s\n", static_cast<unsigned long>(now / 1000),
-                  ready ? "ready; GPS/radio active (not proof of a fix/delivery)" : "disabled; verify GPS/radio configuration");
+    Serial.printf("Slave alive, uptime %lu s: GPS=%s radio=%s (not proof of a fix/delivery)\n", static_cast<unsigned long>(now / 1000),
+                  gpsReady ? "active" : "disabled", radioReady ? "ready" : "disabled");
     lastStatusMs = now;
   }
   delay(5);

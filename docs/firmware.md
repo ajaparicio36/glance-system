@@ -16,6 +16,46 @@ The explicit firmware task confirms Round 2 behavior after the root design and R
 
 ## Configure locally before powering modules
 
+### LoRa bring-up diagnostics
+
+Master and slave print `config source=LOCAL` or `EXAMPLE` at boot after the bounded serial wait. Master initializes radio and uplink independently: a failed radio does not conceal Wi-Fi/NTP diagnostics. Radio polling requires radio readiness, and accepted observations are queued only when uplink initialization succeeded. Slave GPS remains independent of radio readiness; no fake GPS or test packets were added. To see this update the user must build/reflash the selected roles; no Arduino build/flash or physical QA was performed for these diagnostic changes.
+
+The shared owner prints the first failed initialization stage once and retains it in the five-second heartbeat/LoRa report. Heartbeats also repeat LOCAL/EXAMPLE configuration selection, so opening Serial Monitor after boot is useful. Illustrative output only, **not a newly observed hardware failure**:
+
+```text
+Master config source=LOCAL
+Radio init failed: chip_not_detected
+Uplink init ready: network task started (not proof of WiFi/HTTP)
+Master alive, uptime 100 s: config=LOCAL radio=disabled radio_state=chip_not_detected uplink=ready uplink_state=ready
+```
+
+Radio failures distinguish disabled verification, invalid/duplicate IDs, key length/hex/all-zero errors, invalid/duplicate pins, frequency/power range, `spi_begin_failed` and `chip_not_detected`. The safe boot pin/frequency/power summary helps compare the flashed profile without printing the key. Installed LoRa 0.8.0's `begin` fails when version register `0x42` is not `0x12`: that stage points toward SPI/NSS/reset/power/module identification, **not proof of a particular physical fault**. RESET `-1` skips the library's GPIO reset. The read-only audit found current private settings statically valid, but that cannot establish which image/configuration was flashed.
+
+Uplink failures distinguish invalid/duplicate IDs, missing SSID, short/missing or line-broken upload token, missing/invalid URL endpoint/scheme/host, forbidden URL credentials/line breaks, missing trusted-LAN HTTP opt-in, nonprivate HTTP address, unavailable TLS trust, queue allocation and task creation. No SSID/password/token/key/CA body is logged. `uplink_state=ready` means the network task exists; its existing `Uplink wifi=... clock=... http=...` line still determines association, time readiness and HTTP attempts. No upload is manufactured when the radio fails.
+
+Every approximately five seconds both roles print these bounded RAM counters, including zeros when disabled or idle:
+
+- `tx_attempts` counts calls to send a real GPS observation. `tx_drop` counts calls refused before start; `tx_state` names the latest local outcome. No-fix/stagger-cancelled observations do not call the send API and do not increase attempts.
+- `tx_written_bytes` counts bytes accepted by `LoRa.write`, including a partial write later dropped. `tx_started`/`tx_bytes` count frames/full protocol payload bytes accepted for asynchronous start by `endPacket(true)`. Bytes include version/JSON/HMAC, not RF preamble/header/CRC overhead, airtime or confirmed receiver delivery.
+- `tx_idle_local`/`tx_idle_bytes` associate started frames with a later public `beginPacket()` poll reporting no TX in progress. This is local idle observation, **not a receiver ACK or proof of the TxDone IRQ**. `tx_timeout` means TX still reported busy at/after the two-second deadline; late polling of an already-idle radio is not falsely labelled timeout.
+- `rx_packets` counts positive `parsePacket()` results; `rx_bytes` counts payload bytes actually read/drained, including rejected packets. `rx_ok0`/`rx_ok1` count authenticated, valid, fresh observations for configured source slots 0/1 (currently `prototype-001`/`slave-02`). Unknown or unauthenticated raw IDs/payloads are never printed.
+- The reject line counts the first applicable exposed branch: length, version, HMAC, schema, identity, invalid fix, replay, stale/future time or unavailable clock. Existing freshness/authentication gates are unchanged. LoRa's CRC-failed/unexposed traffic is **not counted or invented**.
+- Last-packet RSSI/SNR and age appear only after a positive parsed packet, which may still be rejected later. Before that the report says `last_packet=none`; RSSI is not fabricated as zero. Counters saturate at UINT32_MAX and reset on reboot.
+
+Unused directions normally remain zero: **master TX is zero**, and **slave RX is zero**. The user's current checksum-valid GPS with `sat=0`, `emitted=0` explains zero slave TX attempts/bytes: UART activity or `radio=ready` is not an emitted fix or an on-air link test. An actual fresh fix must pass the unchanged parser, then Slave 2's nonblocking one-second stagger, before any send attempt occurs. No new master boot log has yet identified the current disabled stage.
+
+Next readings to request: the master's boot config-source/pin summary and initialization failure line, then one heartbeat plus LoRa/Uplink report; from the slave, one GPS checksum/fix/emitted summary and LoRa report. Use the confirmed role's normal 115200 monitor workflow; no agent port/reset/monitor action is implied.
+
+Focused checks: `node tools/firmware/radio-diagnostics-check.mjs` evaluates four actual master startup cases, six TX-service branches and seven RX acceptance-tail branches with narrow hardware/policy mocks, plus source wiring/privacy assertions. `node tools/firmware/slave-bringup-check.mjs` retains GPS/pin/queue gates. Real portable counter logic is checked with:
+
+```powershell
+$compiler = 'C:/ProgramData/mingw64/mingw64/bin/g++.exe'
+& $compiler -std=c++17 -Wall -Wextra -Werror -pedantic -I libraries/GlanceFirmware/src tools/firmware/radio-diagnostics-check.cpp -o tools/firmware/radio-diagnostics-check.exe
+./tools/firmware/radio-diagnostics-check.exe
+```
+
+The tests verify counter bytes/stages/rejections/source slots/saturation and retain the existing protocol, GPS, two-source and TLS-selection regressions. They do not certify native compilation, SPI, RF, cryptographic hardware behavior or physical delivery. Private configurations, pins, credentials, accepted bench assumptions and cloud state were not changed.
+
 ### October 26: two slaves and one master
 
 This update supersedes the single-source configuration in the older dated audits below. User-approved identities are **Slave 1 `prototype-001`** (retaining the existing tracker ID; fresh Railway does **not** import Render history) and **Slave 2 `slave-02`**. Master forwards both, without its own GPS position. One owner and one polygon remain backend responsibilities; the matching backend allowlist/migration is coordinated separately. HTTP payload and radio frame version are unchanged. Never run the standalone prototype and Slave 1 concurrently under `prototype-001`.

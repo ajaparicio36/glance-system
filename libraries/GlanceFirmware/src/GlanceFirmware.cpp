@@ -1,6 +1,7 @@
 #include "GlanceFirmware.h"
 #include "GlanceTls.h"
 #include "GlanceSources.h"
+#include "GlanceRadioDiagnostics.h"
 #include <ArduinoJson.h>
 #include <HTTPClient.h>
 #include <NetworkClientSecure.h>
@@ -34,6 +35,43 @@ static uint8_t radioKey[32] = {};
 static SourceReplay radioSources;
 static uint32_t transmissionStartedMs = 0;
 static bool radioTransmitting = false;
+static RadioDiagnostics radioDiagnostics;
+static const char *radioState = "not_started";
+static const char *uplinkState = "not_started";
+static uint32_t lastRadioReportMs = 0;
+
+static bool initFailed(const char *component, const char *&state, const char *reason) {
+  state = reason;
+  Serial.printf("%s init failed: %s\n", component, reason);
+  return false;
+}
+
+const char *radioInitStatus() { return radioState; }
+const char *uplinkInitStatus() { return uplinkState; }
+
+void reportRadioDiagnostics() {
+  const uint32_t now = millis();
+  if (static_cast<uint32_t>(now - lastRadioReportMs) < observationIntervalMs) return;
+  lastRadioReportMs = now;
+  Serial.printf("LoRa state=%s tx_state=%s tx_attempts=%lu tx_drop=%lu tx_written_bytes=%lu tx_started=%lu tx_bytes=%lu tx_idle_local=%lu tx_idle_bytes=%lu tx_timeout=%lu rx_packets=%lu rx_bytes=%lu rx_ok0=%lu rx_ok1=%lu\n",
+                radioState, radioDiagnostics.txState,
+                static_cast<unsigned long>(radioDiagnostics.txAttempts), static_cast<unsigned long>(radioDiagnostics.txDrops),
+                static_cast<unsigned long>(radioDiagnostics.txWrittenBytes), static_cast<unsigned long>(radioDiagnostics.txStarted),
+                static_cast<unsigned long>(radioDiagnostics.txStartedBytes), static_cast<unsigned long>(radioDiagnostics.txIdleLocal),
+                static_cast<unsigned long>(radioDiagnostics.txIdleBytes), static_cast<unsigned long>(radioDiagnostics.txTimeouts),
+                static_cast<unsigned long>(radioDiagnostics.rxPackets), static_cast<unsigned long>(radioDiagnostics.rxBytes),
+                static_cast<unsigned long>(radioDiagnostics.rxAccepted[0]), static_cast<unsigned long>(radioDiagnostics.rxAccepted[1]));
+  const uint32_t *rejected = radioDiagnostics.rejected;
+  Serial.printf("LoRa reject length=%lu version=%lu hmac=%lu schema=%lu id=%lu invalid_fix=%lu replay=%lu stale=%lu clock=%lu\n",
+                static_cast<unsigned long>(rejected[0]), static_cast<unsigned long>(rejected[1]), static_cast<unsigned long>(rejected[2]),
+                static_cast<unsigned long>(rejected[3]), static_cast<unsigned long>(rejected[4]), static_cast<unsigned long>(rejected[5]),
+                static_cast<unsigned long>(rejected[6]), static_cast<unsigned long>(rejected[7]), static_cast<unsigned long>(rejected[8]));
+  if (radioDiagnostics.packetSeen) {
+    Serial.printf("LoRa last_packet age_ms=%lu rssi=%d snr=%.2f\n",
+                  static_cast<unsigned long>(now - radioDiagnostics.lastPacketMs), radioDiagnostics.lastRssi,
+                  static_cast<double>(radioDiagnostics.lastSnr));
+  } else Serial.println("LoRa last_packet=none");
+}
 
 static bool inputPin(int pin) {
   return pin >= 0 && pin < GPIO_NUM_MAX && GPIO_IS_VALID_GPIO(pin);
@@ -138,21 +176,28 @@ static size_t encodeJson(const Observation &observation, char *body, size_t capa
   return serializeJson(document, body, capacity);
 }
 
-static bool allowedUrl(const UplinkConfig &config) {
+static const char *urlError(const UplinkConfig &config) {
   const String url(config.url);
-  if (url.length() > 256 || url.indexOf('\r') >= 0 || url.indexOf('\n') >= 0 ||
-      url.indexOf('@') >= 0 || !url.endsWith("/api/locations")) return false;
-  if (url.startsWith("https://")) return tlsTrustAvailable(config.rootCa) && url.length() > 26;
-  if (!config.allowTrustedLanHttp || !url.startsWith("http://")) return false;
+  if (url.length() > 256) return "url_too_long";
+  if (url.indexOf('\r') >= 0 || url.indexOf('\n') >= 0) return "url_line_break";
+  if (url.indexOf('@') >= 0) return "url_credentials_forbidden";
+  if (!url.endsWith("/api/locations")) return "url_endpoint_invalid";
+  if (url.startsWith("https://")) {
+    if (!tlsTrustAvailable(config.rootCa)) return "tls_trust_unavailable";
+    return url.length() > 26 ? nullptr : "url_host_invalid";
+  }
+  if (!url.startsWith("http://")) return "url_scheme_invalid";
+  if (!config.allowTrustedLanHttp) return "http_lan_opt_in_missing";
   const int slash = url.indexOf('/', 7);
-  if (slash < 0) return false;
+  if (slash < 0) return "url_host_invalid";
   String host = url.substring(7, slash);
   const int colon = host.indexOf(':');
   if (colon >= 0) host = host.substring(0, colon);
   IPAddress address;
-  if (!address.fromString(host)) return false;
-  return address[0] == 10 || (address[0] == 172 && address[1] >= 16 && address[1] <= 31) ||
-         (address[0] == 192 && address[1] == 168);
+  if (!address.fromString(host)) return "http_requires_private_ipv4";
+  const bool privateAddress = address[0] == 10 || (address[0] == 172 && address[1] >= 16 && address[1] <= 31) ||
+                              (address[0] == 192 && address[1] == 168);
+  return privateAddress ? nullptr : "http_requires_private_ipv4";
 }
 
 static bool upload(const Observation &observation, const char *&state, int &httpStatus) {
@@ -241,12 +286,13 @@ static void uplinkTask(void *) {
 }
 
 bool beginUplink(const UplinkConfig &config) {
-  if (strncmp(config.url, "https://", 8) == 0 && !tlsTrustAvailable(config.rootCa)) {
-    Serial.println("TLS trust unavailable: use an ESP32 core with a built-in CA bundle or configure rootCa");
-    return false;
-  }
-  if (!validSourceIds(config.deviceId, config.secondDeviceId) || strlen(config.ssid) == 0 || strlen(config.deviceToken) < 32 ||
-      strchr(config.deviceToken, '\r') || strchr(config.deviceToken, '\n') || !allowedUrl(config)) return false;
+  if (!validSourceIds(config.deviceId, config.secondDeviceId)) return initFailed("Uplink", uplinkState, "ids_invalid_or_duplicate");
+  if (!config.ssid || strlen(config.ssid) == 0) return initFailed("Uplink", uplinkState, "ssid_missing");
+  if (!config.deviceToken || strlen(config.deviceToken) < 32) return initFailed("Uplink", uplinkState, "device_token_short_or_missing");
+  if (strchr(config.deviceToken, '\r') || strchr(config.deviceToken, '\n')) return initFailed("Uplink", uplinkState, "device_token_line_break");
+  if (!config.url) return initFailed("Uplink", uplinkState, "url_missing");
+  const char *reason = urlError(config);
+  if (reason) return initFailed("Uplink", uplinkState, reason);
   if (strncmp(config.url, "https://", 8) == 0) {
     Serial.println(config.rootCa && config.rootCa[0] ? "TLS trust: explicit rootCa override" : "TLS trust: built-in public CA bundle");
   }
@@ -259,7 +305,7 @@ bool beginUplink(const UplinkConfig &config) {
         vQueueDelete(uploadQueues[previous]);
         uploadQueues[previous] = nullptr;
       }
-      return false;
+      return initFailed("Uplink", uplinkState, "queue_allocation_failed");
     }
   }
   if (xTaskCreate(uplinkTask, "glance-uplink", 8192, nullptr, 1, nullptr) != pdPASS) {
@@ -267,8 +313,10 @@ bool beginUplink(const UplinkConfig &config) {
       if (uploadQueues[slot]) vQueueDelete(uploadQueues[slot]);
       uploadQueues[slot] = nullptr;
     }
-    return false;
+    return initFailed("Uplink", uplinkState, "task_creation_failed");
   }
+  uplinkState = "ready";
+  Serial.println("Uplink init ready: network task started (not proof of WiFi/HTTP)");
   return true;
 }
 
@@ -293,28 +341,33 @@ static int hexDigit(char character) {
 }
 
 bool beginRadio(const RadioConfig &config) {
-  if (!config.wiringAndBandVerified || !validSourceIds(config.sourceDeviceId, config.secondSourceDeviceId) || strlen(config.keyHex) != 64 ||
-      config.frequencyHz < 137000000 || config.frequencyHz > 1020000000 || config.txPowerDbm < 2 || config.txPowerDbm > 17) return false;
+  Serial.printf("Radio init config: sck=%d miso=%d mosi=%d nss=%d reset=%d dio0=%d hz=%ld power_dbm=%d\n",
+                config.sckPin, config.misoPin, config.mosiPin, config.csPin, config.resetPin, config.dio0Pin, config.frequencyHz, config.txPowerDbm);
+  if (!config.wiringAndBandVerified) return initFailed("Radio", radioState, "verification_gate_disabled");
+  if (!validSourceIds(config.sourceDeviceId, config.secondSourceDeviceId)) return initFailed("Radio", radioState, "ids_invalid_or_duplicate");
+  if (!config.keyHex || strlen(config.keyHex) != 64) return initFailed("Radio", radioState, "key_length_invalid");
+  if (config.frequencyHz < 137000000 || config.frequencyHz > 1020000000) return initFailed("Radio", radioState, "frequency_out_of_range");
+  if (config.txPowerDbm < 2 || config.txPowerDbm > 17) return initFailed("Radio", radioState, "power_out_of_range");
   const int pins[] = {config.sckPin, config.misoPin, config.mosiPin, config.csPin, config.resetPin, config.dio0Pin};
   for (size_t index = 0; index < 6; ++index) {
     if (index == 4 && pins[index] == -1) continue;
-    if ((index == 1 || index == 5) ? !inputPin(pins[index]) : !outputPin(pins[index])) return false;
-    for (size_t previous = 0; previous < index; ++previous) if (pins[previous] == pins[index]) return false;
+    if ((index == 1 || index == 5) ? !inputPin(pins[index]) : !outputPin(pins[index])) return initFailed("Radio", radioState, "pin_invalid");
+    for (size_t previous = 0; previous < index; ++previous) if (pins[previous] == pins[index]) return initFailed("Radio", radioState, "pin_duplicate");
   }
   uint8_t nonzero = 0;
   for (size_t index = 0; index < sizeof(radioKey); ++index) {
     const int high = hexDigit(config.keyHex[index * 2]);
     const int low = hexDigit(config.keyHex[index * 2 + 1]);
-    if (high < 0 || low < 0) return false;
+    if (high < 0 || low < 0) return initFailed("Radio", radioState, "key_hex_invalid");
     radioKey[index] = static_cast<uint8_t>((high << 4) | low);
     nonzero |= radioKey[index];
   }
-  if (nonzero == 0) return false;
+  if (nonzero == 0) return initFailed("Radio", radioState, "key_all_zero");
   radioConfig = config;
   radioSources.configure(config.sourceDeviceId, config.secondSourceDeviceId);
-  if (!SPI.begin(config.sckPin, config.misoPin, config.mosiPin, config.csPin)) return false;
+  if (!SPI.begin(config.sckPin, config.misoPin, config.mosiPin, config.csPin)) return initFailed("Radio", radioState, "spi_begin_failed");
   LoRa.setPins(config.csPin, config.resetPin, config.dio0Pin);
-  if (!LoRa.begin(config.frequencyHz)) return false;
+  if (!LoRa.begin(config.frequencyHz)) return initFailed("Radio", radioState, "chip_not_detected");
   LoRa.setTxPower(config.txPowerDbm);
   LoRa.setSpreadingFactor(7);
   LoRa.setSignalBandwidth(125000);
@@ -322,6 +375,8 @@ bool beginRadio(const RadioConfig &config) {
   LoRa.setPreambleLength(8);
   LoRa.setSyncWord(0x47);
   LoRa.enableCrc();
+  radioState = "ready";
+  Serial.println("Radio init ready (not proof of RF delivery)");
   return true;
 }
 
@@ -336,54 +391,77 @@ static bool authenticate(const uint8_t *data, size_t length, uint8_t *tag) {
 }
 
 void serviceRadioTransmission() {
+  if (strcmp(radioState, "ready") != 0) return;
   if (radioTransmitting) {
-    if (static_cast<uint32_t>(millis() - transmissionStartedMs) < 2000 && !LoRa.beginPacket()) return;
+    const bool idle = LoRa.beginPacket() != 0;
+    if (!idle && static_cast<uint32_t>(millis() - transmissionStartedMs) < 2000) return;
     LoRa.idle();
     radioTransmitting = false;
+    radioDiagnostics.finished(!idle);
   }
 }
 
 bool sendRadio(const Observation &observation) {
+  addCounter(radioDiagnostics.txAttempts);
+  if (strcmp(radioState, "ready") != 0) return radioDiagnostics.dropTx("not_ready");
   serviceRadioTransmission();
-  if (radioTransmitting) return false;
-  if (!validObservation(observation) || !fresh(observation, millis()) || strcmp(observation.deviceId, radioConfig.sourceDeviceId) != 0) return false;
+  if (radioTransmitting) return radioDiagnostics.dropTx("busy");
+  if (!validObservation(observation) || !fresh(observation, millis())) return radioDiagnostics.dropTx("invalid_or_stale_fix");
+  if (strcmp(observation.deviceId, radioConfig.sourceDeviceId) != 0) return radioDiagnostics.dropTx("source_id_mismatch");
   uint8_t frame[maxFrameBytes];
   frame[0] = 1;
   char body[maxJsonBytes + 1];
   const size_t length = encodeJson(observation, body, sizeof(body));
-  if (!length) return false;
+  if (!length) return radioDiagnostics.dropTx("json_failed");
   memcpy(frame + 1, body, length);
-  if (!authenticate(frame, 1 + length, frame + 1 + length) || !LoRa.beginPacket()) return false;
-  if (LoRa.write(frame, 1 + length + tagBytes) != 1 + length + tagBytes || !LoRa.endPacket(true)) {
+  if (!authenticate(frame, 1 + length, frame + 1 + length)) return radioDiagnostics.dropTx("hmac_failed");
+  if (!LoRa.beginPacket()) return radioDiagnostics.dropTx("begin_packet_failed");
+  const size_t written = LoRa.write(frame, 1 + length + tagBytes);
+  addCounter(radioDiagnostics.txWrittenBytes, static_cast<uint32_t>(written));
+  if (written != 1 + length + tagBytes || !LoRa.endPacket(true)) {
     LoRa.idle();
-    return false;
+    return radioDiagnostics.dropTx("write_or_start_failed");
   }
   transmissionStartedMs = millis();
   radioTransmitting = true;
+  radioDiagnostics.started(static_cast<uint32_t>(1 + length + tagBytes));
   return true;
 }
 
 bool receiveRadio(Observation &observation) {
+  if (strcmp(radioState, "ready") != 0) return false;
   const int length = LoRa.parsePacket();
   if (length <= 0) return false;
+  radioDiagnostics.parsed(millis(), LoRa.packetRssi(), LoRa.packetSnr());
   if (length > static_cast<int>(maxFrameBytes)) {
-    while (LoRa.available()) LoRa.read();
-    return false;
+    while (LoRa.available()) {
+      if (LoRa.read() < 0) break;
+      addCounter(radioDiagnostics.rxBytes);
+    }
+    return radioDiagnostics.reject(RadioReject::Length);
   }
   uint8_t frame[maxFrameBytes];
   size_t received = 0;
-  while (LoRa.available() && received < sizeof(frame)) frame[received++] = static_cast<uint8_t>(LoRa.read());
-  if (received != static_cast<size_t>(length) || !validFrameSize(received, frame[0])) return false;
+  while (LoRa.available() && received < sizeof(frame)) {
+    const int value = LoRa.read();
+    if (value < 0) break;
+    frame[received++] = static_cast<uint8_t>(value);
+    addCounter(radioDiagnostics.rxBytes);
+  }
+  if (received != static_cast<size_t>(length) || received <= 1 + tagBytes) return radioDiagnostics.reject(RadioReject::Length);
+  if (!validFrameSize(received, frame[0])) return radioDiagnostics.reject(RadioReject::Version);
   const size_t authenticatedLength = received - tagBytes;
   uint8_t expected[tagBytes];
-  if (!authenticate(frame, authenticatedLength, expected) || !equalTag(expected, frame + authenticatedLength)) return false;
+  if (!authenticate(frame, authenticatedLength, expected) || !equalTag(expected, frame + authenticatedLength)) return radioDiagnostics.reject(RadioReject::Mac);
   JsonDocument document;
   if (deserializeJson(document, frame + 1, authenticatedLength - 1, DeserializationOption::NestingLimit(1)) ||
       !document.is<JsonObject>() || document.size() != 4 || !document["deviceId"].is<const char *>() ||
-      !document["observedAt"].is<const char *>() || !document["latitude"].is<double>() || !document["longitude"].is<double>()) return false;
+      !document["observedAt"].is<const char *>() || !document["latitude"].is<double>() || !document["longitude"].is<double>()) return radioDiagnostics.reject(RadioReject::Schema);
   const char *deviceId = document["deviceId"].as<const char *>();
   const char *timestamp = document["observedAt"].as<const char *>();
-  if (sourceIndex(deviceId, radioConfig.sourceDeviceId, radioConfig.secondSourceDeviceId) < 0 || !validDeviceId(deviceId) || !validTimestamp(timestamp)) return false;
+  const int slot = sourceIndex(deviceId, radioConfig.sourceDeviceId, radioConfig.secondSourceDeviceId);
+  if (slot < 0 || !validDeviceId(deviceId)) return radioDiagnostics.reject(RadioReject::Identity);
+  if (!validTimestamp(timestamp)) return radioDiagnostics.reject(RadioReject::InvalidFix);
   Observation candidate;
   strcpy(candidate.deviceId, deviceId);
   strcpy(candidate.observedAt, timestamp);
@@ -392,12 +470,15 @@ bool receiveRadio(Observation &observation) {
   candidate.receivedAtMs = millis();
   timeval now;
   gettimeofday(&now, nullptr);
-  if (!validObservation(candidate) || now.tv_sec < 1704067200) return false;
+  if (!validObservation(candidate)) return radioDiagnostics.reject(RadioReject::InvalidFix);
+  if (now.tv_sec < 1704067200) return radioDiagnostics.reject(RadioReject::Clock);
   const int64_t ageMs = static_cast<int64_t>(now.tv_sec) * 1000 + now.tv_usec / 1000 - timestampMilliseconds(candidate.observedAt);
-  if (!acceptableAge(ageMs)) return false;
+  if (!acceptableAge(ageMs)) return radioDiagnostics.reject(RadioReject::Stale);
   candidate.receivedAtMs -= static_cast<uint32_t>(ageMs > 0 ? ageMs : 0);
-  if (!radioSources.accept(candidate, millis(), static_cast<int64_t>(now.tv_sec) * 1000 + now.tv_usec / 1000)) return false;
+  if (!newerThan(candidate, radioSources.lastTimestamp[slot])) return radioDiagnostics.reject(RadioReject::Replay);
+  if (!radioSources.accept(candidate, millis(), static_cast<int64_t>(now.tv_sec) * 1000 + now.tv_usec / 1000)) return radioDiagnostics.reject(RadioReject::Stale);
   observation = candidate;
+  addCounter(radioDiagnostics.rxAccepted[slot]);
   return true;
 }
 

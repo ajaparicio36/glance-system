@@ -48,7 +48,9 @@ assert.ok(!sketch.includes('beginUplink'));
 const radioSetup = firmware.slice(firmware.indexOf('bool beginRadio('), firmware.indexOf('static bool authenticate('));
 assert.ok(radioSetup.indexOf('!config.wiringAndBandVerified') < radioSetup.indexOf('SPI.begin('));
 assert.ok(radioSetup.indexOf('config.frequencyHz < 137000000') < radioSetup.indexOf('LoRa.begin('));
-assert.match(radioSetup, /for \(size_t index = 0; index < 6; \+\+index\) \{\s*if \(index == 4 && pins\[index\] == -1\) continue;\s*if \(\(index == 1 \|\| index == 5\) \? !inputPin\(pins\[index\]\) : !outputPin\(pins\[index\]\)\) return false;\s*for \(size_t previous = 0; previous < index; \+\+previous\) if \(pins\[previous\] == pins\[index\]\) return false;/);
+assert.match(radioSetup, /if \(index == 4 && pins\[index\] == -1\) continue;/);
+assert.match(radioSetup, /return initFailed\("Radio", radioState, "pin_invalid"\)/);
+assert.match(radioSetup, /return initFailed\("Radio", radioState, "pin_duplicate"\)/);
 const validationCpp = /const int pins\[\] = \{[\s\S]+?(?=\s+uint8_t nonzero)/.exec(radioSetup)?.[0];
 assert.ok(validationCpp);
 const validationJs = validationCpp.replace('const int pins[] = {', 'const pins = [').replace('config.dio0Pin};', 'config.dio0Pin];').replaceAll('size_t ', 'let ');
@@ -65,6 +67,8 @@ for (const scenario of [
 ]) {
   const valid = vm.runInNewContext(`(() => { ${validationJs} return true; })()`, {
     config: { ...basePins, ...scenario.changes },
+    radioState: 'not_started',
+    initFailed: () => false,
     inputPin: pin => Number.isInteger(pin) && pin >= 0 && pin <= 21,
     outputPin: pin => Number.isInteger(pin) && pin >= 0 && pin <= 21,
   });

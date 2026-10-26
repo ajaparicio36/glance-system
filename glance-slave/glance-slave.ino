@@ -2,8 +2,10 @@
 #include <GlanceSources.h>
 #if __has_include("config.local.h")
 #include "config.local.h"
+static const char *configSource = "LOCAL";
 #else
 #include "config.example.h"
+static const char *configSource = "EXAMPLE";
 #endif
 
 static bool gpsReady = false;
@@ -18,6 +20,7 @@ void setup() {
 #endif
   const uint32_t serialWaitStartedMs = millis();
   while (!Serial && static_cast<uint32_t>(millis() - serialWaitStartedMs) < 2000) delay(10);
+  Serial.printf("Slave config source=%s\n", configSource);
   gpsReady = glance::validDeviceId(deviceId) && strcmp(deviceId, radioConfig.sourceDeviceId) == 0 &&
              glance::disjointGpsRadioPins(gpsConfig, radioConfig) && glance::beginGps(gpsConfig);
   radioReady = gpsReady && glance::beginRadio(radioConfig);
@@ -40,9 +43,10 @@ void loop() {
     Serial.println(glance::sendRadio(radioPending.observation) ? "Observation transmitted asynchronously" : "Radio observation dropped");
   }
   if (static_cast<uint32_t>(now - lastStatusMs) >= 5000) {
-    Serial.printf("Slave alive, uptime %lu s: GPS=%s radio=%s (not proof of a fix/delivery)\n", static_cast<unsigned long>(now / 1000),
-                  gpsReady ? "active" : "disabled", radioReady ? "ready" : "disabled");
+    Serial.printf("Slave alive, uptime %lu s: config=%s GPS=%s radio=%s radio_state=%s (not proof of a fix/delivery)\n", static_cast<unsigned long>(now / 1000),
+                  configSource, gpsReady ? "active" : "disabled", radioReady ? "ready" : "disabled", glance::radioInitStatus());
     lastStatusMs = now;
   }
+  glance::reportRadioDiagnostics();
   delay(5);
 }

@@ -49,5 +49,8 @@ bool sendRadio(const Observation &observation);
 void serviceRadioTransmission();
 bool receiveRadio(Observation &observation);
 bool disjointGpsRadioPins(const GpsConfig &gps, const RadioConfig &radio);
+const char *radioInitStatus();
+const char *uplinkInitStatus();
+void reportRadioDiagnostics();
 
 }

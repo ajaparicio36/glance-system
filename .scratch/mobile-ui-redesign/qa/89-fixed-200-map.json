@@ -1,0 +1,160 @@
+[
+  {
+    "text": "SYNTHETIC QA · live · no server writes",
+    "center": "[540,2303]",
+    "key": 3506402
+  },
+  {
+    "content-desc": "Map",
+    "interactions": [
+      "clickable",
+      "focusable"
+    ],
+    "state": [
+      "selected"
+    ],
+    "center": "[283,2181]",
+    "key": 3506402
+  },
+  {
+    "content-desc": "Setup",
+    "interactions": [
+      "clickable",
+      "focusable"
+    ],
+    "center": "[764,2181]",
+    "key": 3506402
+  },
+  {
+    "text": "Map",
+    "center": "[355,2181]",
+    "key": 3506402
+  },
+  {
+    "text": "Setup",
+    "center": "[836,2181]",
+    "key": 3506402
+  },
+  {
+    "text": "",
+    "center": "[185,2172]",
+    "key": 3506402
+  },
+  {
+    "text": "",
+    "center": "[634,2172]",
+    "key": 3506402
+  },
+  {
+    "interactions": [
+      "focusable",
+      "scrollable"
+    ],
+    "center": "[540,1230]",
+    "bounds": "[0,0][1080,2460]",
+    "key": 3506402
+  },
+  {
+    "content-desc": "Recenter fence and trackers",
+    "interactions": [
+      "clickable",
+      "focusable"
+    ],
+    "center": "[948,972]",
+    "key": 3506402
+  },
+  {
+    "content-desc": "Refresh server",
+    "interactions": [
+      "clickable",
+      "focusable"
+    ],
+    "center": "[948,1164]",
+    "key": 3506402
+  },
+  {
+    "content-desc": "Showing a Map created with MapLibre. Scroll by dragging two fingers. Zoom by pinching two fingers.",
+    "interactions": [
+      "clickable",
+      "focusable",
+      "long-clickable"
+    ],
+    "center": "[540,1455]",
+    "key": 3506402
+  },
+  {
+    "text": "© OpenStreetMap contributors · OpenFreeMap",
+    "center": "[588,1812]",
+    "key": 3506402
+  },
+  {
+    "content-desc": "Attribution icon. Activate to show attribution dialog.",
+    "interactions": [
+      "clickable",
+      "focusable"
+    ],
+    "center": "[79,1918]",
+    "key": 3506402
+  },
+  {
+    "text": "",
+    "center": "[948,963]",
+    "key": 3506402
+  },
+  {
+    "text": "",
+    "center": "[948,1155]",
+    "key": 3506402
+  },
+  {
+    "text": "Glance",
+    "center": "[398,231]",
+    "key": 3506402
+  },
+  {
+    "text": "Connected",
+    "center": "[326,432]",
+    "key": 3506402
+  },
+  {
+    "text": "prototype-001 · Outside geofence · 0s ago",
+    "center": "[562,663]",
+    "key": 3506402
+  },
+  {
+    "content-desc": "prototype-001",
+    "interactions": [
+      "clickable",
+      "focusable"
+    ],
+    "state": [
+      "selected"
+    ],
+    "center": "[540,2263]",
+    "key": 3506402
+  },
+  {
+    "content-desc": "slave-02",
+    "interactions": [
+      "clickable",
+      "focusable"
+    ],
+    "center": "[540,2427]",
+    "key": 3506402
+  },
+  {
+    "text": "",
+    "center": "[147,222]",
+    "key": 3506402
+  },
+  {
+    "text": "prototype-001",
+    "center": "[540,2263]",
+    "key": 3506402
+  },
+  {
+    "text": "slave-02",
+    "center": "[540,2448]",
+    "key": 3506402
+  }
+]

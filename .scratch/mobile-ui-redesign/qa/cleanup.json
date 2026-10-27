@@ -1,0 +1,22 @@
+{
+  "device": "112492539R101297",
+  "app": "com.glance.tracker",
+  "bundleHost": "localhost:8081",
+  "bundleHostEvidence": "100-restored-bundle-host.json; live provider verified in 102,104,105,107",
+  "metroOriginalSha256": "1B1806AE175C8332FD0F0E8835530D1565C5DB4704249C3848AE4BE6F7C85B86",
+  "metroRestoredSha256": "1B1806AE175C8332FD0F0E8835530D1565C5DB4704249C3848AE4BE6F7C85B86",
+  "fontScale": "0.85",
+  "animatorDurationScale": "1.0",
+  "transitionAnimationScale": "1.0",
+  "windowAnimationScale": "1.0",
+  "reverse": "UsbFfs tcp:8081 tcp:8081",
+  "listeners": [
+    {
+      "LocalPort": 8081,
+      "OwningProcess": 42384
+    }
+  ],
+  "disposableBundleExists": false,
+  "fixtureSession": "90317 stopped via Ctrl-C; exit 1 expected for interruption",
+  "finalEvidence": "107-final-real-map-settled.png"
+}

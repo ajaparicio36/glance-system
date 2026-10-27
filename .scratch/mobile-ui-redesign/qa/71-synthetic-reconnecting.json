@@ -1,0 +1,282 @@
+[
+  {
+    "text": "SYNTHETIC QA · reconnecting · no server writes",
+    "center": "[540,2307]",
+    "key": 3506402
+  },
+  {
+    "content-desc": "Map",
+    "interactions": [
+      "clickable",
+      "focusable"
+    ],
+    "state": [
+      "selected"
+    ],
+    "center": "[374,2205]",
+    "key": 3506402
+  },
+  {
+    "content-desc": "Setup",
+    "interactions": [
+      "clickable",
+      "focusable"
+    ],
+    "center": "[702,2205]",
+    "key": 3506402
+  },
+  {
+    "text": "",
+    "center": "[320,2201]",
+    "key": 3506402
+  },
+  {
+    "text": "Map",
+    "center": "[415,2205]",
+    "key": 3506402
+  },
+  {
+    "text": "",
+    "center": "[632,2201]",
+    "key": 3506402
+  },
+  {
+    "text": "Setup",
+    "center": "[744,2205]",
+    "key": 3506402
+  },
+  {
+    "interactions": [
+      "focusable",
+      "scrollable"
+    ],
+    "center": "[540,269]",
+    "bounds": "[48,144][1032,395]",
+    "key": 3506402
+  },
+  {
+    "content-desc": "Recenter fence and trackers",
+    "interactions": [
+      "clickable",
+      "focusable"
+    ],
+    "center": "[960,491]",
+    "key": 3506402
+  },
+  {
+    "content-desc": "Refresh server",
+    "interactions": [
+      "clickable",
+      "focusable"
+    ],
+    "center": "[960,659]",
+    "key": 3506402
+  },
+  {
+    "content-desc": "Showing a Map created with MapLibre. Scroll by dragging two fingers. Zoom by pinching two fingers.",
+    "interactions": [
+      "clickable",
+      "focusable",
+      "long-clickable"
+    ],
+    "center": "[540,1230]",
+    "key": 3506402
+  },
+  {
+    "text": "",
+    "center": "[960,487]",
+    "key": 3506402
+  },
+  {
+    "text": "",
+    "center": "[960,655]",
+    "key": 3506402
+  },
+  {
+    "text": "© OpenStreetMap contributors · OpenFreeMap",
+    "center": "[486,925]",
+    "key": 3506402
+  },
+  {
+    "interactions": [
+      "focusable",
+      "scrollable"
+    ],
+    "center": "[540,1439]",
+    "bounds": "[51,1021][1029,1857]",
+    "key": 3506402
+  },
+  {
+    "content-desc": "Refresh",
+    "interactions": [
+      "clickable",
+      "focusable"
+    ],
+    "center": "[310,1953]",
+    "key": 3506402
+  },
+  {
+    "content-desc": "History (7)",
+    "interactions": [
+      "clickable",
+      "focusable"
+    ],
+    "center": "[769,1953]",
+    "key": 3506402
+  },
+  {
+    "content-desc": "Attribution icon. Activate to show attribution dialog.",
+    "interactions": [
+      "clickable",
+      "focusable"
+    ],
+    "center": "[79,808]",
+    "key": 3506402
+  },
+  {
+    "text": "",
+    "center": "[224,1949]",
+    "key": 3506402
+  },
+  {
+    "text": "Refresh",
+    "center": "[352,1952]",
+    "key": 3506402
+  },
+  {
+    "text": "",
+    "center": "[661,1949]",
+    "key": 3506402
+  },
+  {
+    "text": "History (7)",
+    "center": "[811,1952]",
+    "key": 3506402
+  },
+  {
+    "text": "",
+    "center": "[117,201]",
+    "key": 3506402
+  },
+  {
+    "text": "Glance",
+    "center": "[257,204]",
+    "key": 3506402
+  },
+  {
+    "text": "Reconnecting",
+    "center": "[879,197]",
+    "key": 3506402
+  },
+  {
+    "text": "prototype-001 · Unknown · disconnected · 0s ago",
+    "center": "[532,342]",
+    "key": 3506402
+  },
+  {
+    "content-desc": "prototype-001",
+    "interactions": [
+      "clickable",
+      "focusable"
+    ],
+    "state": [
+      "selected"
+    ],
+    "center": "[337,1141]",
+    "key": 3506402
+  },
+  {
+    "content-desc": "slave-02",
+    "interactions": [
+      "clickable",
+      "focusable"
+    ],
+    "center": "[796,1141]",
+    "key": 3506402
+  },
+  {
+    "text": "prototype-001",
+    "center": "[276,1282]",
+    "key": 3506402
+  },
+  {
+    "text": "Fence v10",
+    "center": "[883,1282]",
+    "key": 3506402
+  },
+  {
+    "text": "",
+    "center": "[129,1379]",
+    "key": 3506402
+  },
+  {
+    "text": "Unknown · disconnected",
+    "center": "[582,1383]",
+    "key": 3506402
+  },
+  {
+    "text": "",
+    "center": "[162,1509]",
+    "key": 3506402
+  },
+  {
+    "text": "Last-known coordinates",
+    "center": "[412,1513]",
+    "key": 3506402
+  },
+  {
+    "text": "10.704800, 122.543800",
+    "interactions": [
+      "focusable"
+    ],
+    "center": "[540,1590]",
+    "key": 3506402
+  },
+  {
+    "text": "",
+    "center": "[162,1747]",
+    "key": 3506402
+  },
+  {
+    "text": "Last seen · GPS observation",
+    "center": "[442,1751]",
+    "key": 3506402
+  },
+  {
+    "text": "Oct 27, 2026, 4:12:44 PM GMT+8",
+    "interactions": [
+      "focusable"
+    ],
+    "center": "[540,1828]",
+    "key": 3506402
+  },
+  {
+    "content-desc": "Timing details",
+    "interactions": [
+      "clickable",
+      "focusable"
+    ],
+    "off-screen": true,
+    "key": 3506402
+  },
+  {
+    "text": "prototype-001",
+    "center": "[336,1140]",
+    "key": 3506402
+  },
+  {
+    "text": "slave-02",
+    "center": "[796,1140]",
+    "key": 3506402
+  },
+  {
+    "text": "",
+    "off-screen": true,
+    "key": 3506402
+  },
+  {
+    "text": "Timing details",
+    "off-screen": true,
+    "key": 3506402
+  }
+]

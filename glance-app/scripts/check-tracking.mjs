@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdirSync, readFileSync, unlinkSync } from 'node:fs';
+import { mkdirSync, readFileSync, readdirSync, unlinkSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { createServer } from 'node:http';
 import { DatabaseSync } from 'node:sqlite';
@@ -9,8 +9,9 @@ import { cacheMigration, snapshotCache } from '../src/db/schema.ts';
 import { cacheWrite } from '../src/db/cache-query.ts';
 import { acceptsSnapshot, collectAlerts, normalizeSettings, parseCache, safetyLabel } from '../src/tracking/policy.ts';
 import { FenceConflict, liveUrl, requestSnapshot, ServerConnectionError, updateFence } from '../src/tracking/network.ts';
-import { DEFAULT_MAP_POSITION, fromMapCoordinate, initialMapCenter, toMapCoordinate } from '../src/components/live-map.geometry.ts';
-import { clientTimeZone, formatLocalTimestamp, historyPage } from '../src/tracking/presentation.ts';
+import { DEFAULT_MAP_POSITION, fromMapCoordinate, initialMapCenter, mapCameraPadding, toMapCoordinate } from '../src/components/live-map.geometry.ts';
+import { clientTimeZone, connectionLabel, deviceHistoryPage, episodeLabel, formatLocalTimestamp, historyPage } from '../src/tracking/presentation.ts';
+import { createFenceDraft, fenceDraftReducer, inputCoordinate, toVertexInput, validateFenceDraft } from '../src/tracking/fence-draft.ts';
 import { palettes } from '../src/tracking/colors.ts';
 import { parseSnapshot, parseSnapshotMessage } from '../../shared/protocol.ts';
 import { validatePolygon } from '../../shared/geofence.ts';
@@ -23,6 +24,12 @@ assert.deepEqual(initialMapCenter([], empty.devices), [122.54782989758861, 10.73
 assert.deepEqual(initialMapCenter(vertices, empty.devices), [124, 11]);
 assert.deepEqual(initialMapCenter(vertices, located.devices), [124.2, 11.1]);
 assert.deepEqual(fromMapCoordinate(toMapCoordinate(DEFAULT_MAP_POSITION)), DEFAULT_MAP_POSITION);
+assert.deepEqual(mapCameraPadding(820, 144, 464, 24), { top: 168, right: 72, bottom: 504, left: 32 });
+assert.equal(mapCameraPadding(820, 144, 464, 48).bottom, 528);
+const crowdedCameraPadding = mapCameraPadding(820, 300, 600, 48);
+assert.ok(820 - crowdedCameraPadding.top - crowdedCameraPadding.bottom >= 96);
+assert.ok(crowdedCameraPadding.bottom > crowdedCameraPadding.top);
+assert.equal(mapCameraPadding(0, 144, 464, 24).bottom, 0);
 const tappedDraft = [[122.544, 10.705], [122.545, 10.705], [122.545, 10.706]].map(fromMapCoordinate);
 assert.equal(validatePolygon(tappedDraft).valid, true);
 assert.equal(validatePolygon(tappedDraft.slice(0, -1)).valid, false);
@@ -52,6 +59,42 @@ assert.equal(historyPage(episodes, NaN).page, 0);
 assert.equal(historyPage(episodes.slice(0, 4), 2).page, 0);
 assert.deepEqual(episodes.map(episode => episode.id), Array.from({ length: 12 }, (_, index) => index + 1));
 assert.equal(historyPage(episodes, 0).incidents[0], episodes[11]);
+const selectedHistory = Array.from({ length: 14 }, (_, index) => ({ ...incident, id: index + 1, deviceId: index % 2 === 0 ? 'prototype-001' : 'slave-02' }));
+assert.deepEqual(deviceHistoryPage(selectedHistory, 'prototype-001', 0).incidents.map(episode => episode.id), [13, 11, 9, 7, 5]);
+assert.deepEqual(deviceHistoryPage(selectedHistory, 'slave-02', 1).incidents.map(episode => episode.id), [4, 2]);
+assert.equal(deviceHistoryPage(selectedHistory, 'slave-02', 1).total, 7);
+assert.equal(deviceHistoryPage(selectedHistory, 'absent-device', 2).total, 0);
+assert.equal(deviceHistoryPage(selectedHistory.slice(0, 4), 'slave-02', 1).page, 0);
+assert.equal(episodeLabel(null), 'Outside boundary · open');
+assert.equal(episodeLabel('returned'), 'Back inside fence');
+assert.equal(episodeLabel('fence_changed'), 'Boundary updated');
+assert.equal(connectionLabel('live', null), 'Connected');
+assert.notEqual(connectionLabel('live', 'Invalid server update'), 'Connected');
+assert.notEqual(connectionLabel('connecting', null), 'Connected');
+const initialDraft = createFenceDraft(located.geofence);
+const changedDraft = fenceDraftReducer(initialDraft, { type: 'vertices', vertices: tappedDraft.map(toVertexInput) });
+assert.equal(changedDraft.dirty, true);
+assert.equal(changedDraft.expectedVersion, 1);
+assert.equal(validateFenceDraft(changedDraft.vertices).valid, true);
+assert.match(validateFenceDraft(changedDraft.vertices.slice(0, 2)).error, /1 more distinct corner/);
+assert.equal(validateFenceDraft([{ latitude: '', longitude: '124' }]).valid, false);
+assert.equal(Number.isNaN(inputCoordinate({ latitude: '', longitude: '124' }).latitude), true);
+assert.equal(validateFenceDraft([{ latitude: '11', longitude: '124' }, { latitude: '12', longitude: '125' }, { latitude: '11', longitude: '125' }, { latitude: '12', longitude: '124' }]).valid, false);
+const failedDraft = fenceDraftReducer(changedDraft, { type: 'failed' });
+assert.equal(failedDraft.needsReload, true);
+assert.equal(failedDraft.vertices, changedDraft.vertices);
+assert.equal(failedDraft.expectedVersion, 1);
+const reloadedDraft = fenceDraftReducer(failedDraft, { type: 'reload', version: 9 });
+assert.equal(reloadedDraft.vertices, changedDraft.vertices);
+assert.equal(reloadedDraft.expectedVersion, 9);
+assert.equal(reloadedDraft.needsReload, false);
+assert.equal(reloadedDraft.dirty, true);
+assert.equal(reloadedDraft.confirmedVersion, null);
+const confirmedDraft = fenceDraftReducer(reloadedDraft, { type: 'confirmed', fence: { ...located.geofence, version: 10 } });
+assert.equal(confirmedDraft.dirty, false);
+assert.equal(confirmedDraft.confirmedVersion, 10);
+assert.equal(fenceDraftReducer(confirmedDraft, { type: 'vertices', vertices: [] }).confirmedVersion, null);
+assert.equal(createFenceDraft(null).expectedVersion, 0);
 assert.equal(clientTimeZone(), Intl.DateTimeFormat().resolvedOptions().timeZone);
 assert.equal(formatLocalTimestamp('invalid'), 'Time unavailable');
 assert.equal(formatLocalTimestamp('2026-10-03T00:00:00Z'), 'Time unavailable');
@@ -70,11 +113,31 @@ const nativeMap = readFileSync(new URL('../src/components/live-map.native.tsx', 
 assert.match(nativeMap, /Gesture\.Native\(\)\.shouldActivateOnStart\(true\)\.disallowInterruption\(true\)/);
 assert.match(nativeMap, /<GestureDetector gesture={mapGesture}>/);
 assert.match(nativeMap, /<GestureDetector gesture={mapGesture}>\s*<View collapsable={false} style={StyleSheet\.absoluteFill}>\s*<MapLibreMap/);
-for (const screen of ['map-screen', 'setup-screen']) {
+for (const screen of ['map-screen', 'setup-screen', 'history-screen', 'fence-screen']) {
   const source = readFileSync(new URL(`../src/screens/${screen}.tsx`, import.meta.url), 'utf8');
   assert.match(source, /import \{ ScrollView \} from 'react-native-gesture-handler'/);
-  assert.doesNotMatch(source, /scrollEnabled=/);
+  assert.doesNotMatch(source, /scrollEnabled=\{false\}/);
 }
+const appRoot = new URL('../src/app/', import.meta.url);
+assert.deepEqual(readdirSync(new URL('(tabs)/', appRoot)).sort(), ['_layout.tsx', 'explore.tsx', 'index.tsx']);
+const rootLayout = readFileSync(new URL('_layout.tsx', appRoot), 'utf8');
+assert.match(rootLayout, /<Stack.Screen name="fence"/);
+assert.match(rootLayout, /<Stack.Screen name="history"/);
+assert.match(rootLayout, /presentation: 'formSheet'/);
+const tabsSource = readFileSync(new URL('../src/components/app-tabs.tsx', import.meta.url), 'utf8');
+assert.deepEqual([...tabsSource.matchAll(/<Tabs.Screen name="([^"]+)"/g)].map(match => match[1]), ['index', 'explore']);
+const mapSource = readFileSync(new URL('../src/screens/map-screen.tsx', import.meta.url), 'utf8');
+assert.match(mapSource, /return largeText \? <ScrollView\b[^>]*>\{header\}\{map\}\{inspector\}<\/ScrollView>/);
+assert.match(mapSource, /<MapContent key={settings\?\.scope/);
+assert.match(mapSource, /pathname: '\/history', params: { deviceId: selectedDevice.deviceId }/);
+const historySource = readFileSync(new URL('../src/screens/history-screen.tsx', import.meta.url), 'utf8');
+assert.match(historySource, /key={\(settings\?\.scope \?\? 'unconfigured'\) \+ ':' \+ selected}/);
+assert.match(historySource, /const \[expanded, setExpanded\] = useState\(false\)/);
+const editorSource = readFileSync(new URL('../src/screens/fence-screen.tsx', import.meta.url), 'utf8');
+assert.match(editorSource, /usePreventRemove\(draft.dirty \|\| pending/);
+assert.match(editorSource, /navigation.dispatch\(data.action\)/);
+assert.match(editorSource, /if \(inFlight.current \|\| !scopeMatches/);
+assert.doesNotMatch(editorSource, /<FenceEditor key=/);
 const outside = { ...located, revision: 3, devices: [{ ...located.devices[0], boundaryStatus: 'outside', activeViolationId: 1 }], incidents: [incident] };
 const seen = new Set();
 assert.deepEqual(collectAlerts(empty, seen, true), []);
@@ -177,11 +240,14 @@ function luminance(hex) {
   return channels[0] * 0.2126 + channels[1] * 0.7152 + channels[2] * 0.0722;
 }
 for (const palette of Object.values(palettes)) {
-  for (const background of ['background', 'card']) {
+  for (const background of ['background', 'card', 'popover', 'secondary', 'muted', 'input']) {
     const foreground = luminance(palette['muted-foreground']);
     const surface = luminance(palette[background]);
     assert.ok((Math.max(foreground, surface) + 0.05) / (Math.min(foreground, surface) + 0.05) >= 4.5);
   }
+  const primaryText = luminance(palette['primary-foreground']);
+  const primarySurface = luminance(palette.primary);
+  assert.ok((Math.max(primaryText, primarySurface) + 0.05) / (Math.min(primaryText, primarySurface) + 0.05) >= 4.5);
 }
 
 mkdirSync(new URL('../dist/', import.meta.url), { recursive: true });
@@ -253,3 +319,4 @@ try {
 await assert.rejects(requestSnapshot(settings), /Cannot reach the backend/);
 console.log('PASS: initial empty-map origin and coordinate/tap-draft geometry, five-episode pagination/clamping/identity, detected local timezone formatting (UTC and Pacific/Honolulu) with unchanged wire timestamps, native gesture source wiring (not device behavior), strict cache parsing, monotonic durable Drizzle SQLite writes, server/owner isolation, freshness, alert dedup/baselines, polygon validation, contrast, HTTPS policy, HTTP bearer/version/conflict and sanitized connection-error client contract (synthetic local fixture).');
 console.log('PASS: prototype-001 + slave-02 HTTP/frame/cache round trips, durable two-tracker SQLite retention against older single-tracker writes, independent freshness/status, simultaneous linked episodes, per-device return/fence-change alerts and reconnect suppression, cross-device five-item history pagination (synthetic fixtures; no native rendering or hardware exercised).');
+console.log('PASS: selected-device filtering before five-item pagination, missing-device isolation and clamping, truthful connection/resolution labels, draft validation and failed/reload/confirmed transitions, grouped route and removal-guard source wiring. Native navigation, focus, gestures and rendering remain unverified.');

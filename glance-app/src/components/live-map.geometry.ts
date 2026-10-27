@@ -14,3 +14,10 @@ export function initialMapCenter(polygon: Coordinate[], devices: TrackerSnapshot
   const location = devices.find(device => device.location)?.location;
   return toMapCoordinate(location ?? polygon[0] ?? DEFAULT_MAP_POSITION);
 }
+
+export function mapCameraPadding(height: number, controlsTop: number, contentBottom: number, attributionHeight: number): { top: number; right: number; bottom: number; left: number } {
+  const top = Math.max(0, controlsTop) + 24;
+  const bottom = Math.max(0, contentBottom) + attributionHeight + 16;
+  const scale = Math.min(1, Math.max(0, height - 96) / (top + bottom));
+  return { top: Math.floor(top * scale), right: 72, bottom: Math.floor(bottom * scale), left: 32 };
+}

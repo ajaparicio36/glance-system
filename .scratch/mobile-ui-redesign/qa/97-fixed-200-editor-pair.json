@@ -1,0 +1,168 @@
+[
+  {
+    "text": "SYNTHETIC QA · live · no server writes",
+    "center": "[540,2303]",
+    "key": 3506402
+  },
+  {
+    "text": "Geofence setup",
+    "center": "[540,187]",
+    "key": 3506402
+  },
+  {
+    "content-desc": "Back to Setup",
+    "interactions": [
+      "clickable",
+      "focusable"
+    ],
+    "center": "[132,361]",
+    "key": 3506402
+  },
+  {
+    "content-desc": "Cancel",
+    "interactions": [
+      "clickable",
+      "focusable"
+    ],
+    "center": "[841,360]",
+    "key": 3506402
+  },
+  {
+    "interactions": [
+      "focusable",
+      "scrollable"
+    ],
+    "center": "[540,1469]",
+    "bounds": "[0,479][1080,2460]",
+    "key": 3506402
+  },
+  {
+    "text": "Cancel",
+    "center": "[841,360]",
+    "key": 3506402
+  },
+  {
+    "text": "",
+    "center": "[132,352]",
+    "key": 3506402
+  },
+  {
+    "text": "Draft · 4 vertices",
+    "off-screen": true,
+    "key": 3506402
+  },
+  {
+    "text": "Polygon",
+    "off-screen": true,
+    "key": 3506402
+  },
+  {
+    "text": "Valid polygon · no unsaved changes",
+    "off-screen": true,
+    "key": 3506402
+  },
+  {
+    "text": "Saved: solid amber · Draft: dashed amber",
+    "center": "[540,580]",
+    "key": 3506402
+  },
+  {
+    "text": "Editing version 10. Edges cannot cross. Coordinates must be valid.",
+    "center": "[540,847]",
+    "key": 3506402
+  },
+  {
+    "content-desc": "Add coordinate",
+    "interactions": [
+      "clickable",
+      "focusable"
+    ],
+    "center": "[540,1150]",
+    "key": 3506402
+  },
+  {
+    "content-desc": "Reload fence",
+    "interactions": [
+      "clickable",
+      "focusable"
+    ],
+    "center": "[540,1390]",
+    "key": 3506402
+  },
+  {
+    "text": "Reload keeps your draft and updates the expected server version.",
+    "center": "[540,1693]",
+    "key": 3506402
+  },
+  {
+    "text": "",
+    "off-screen": true,
+    "key": 3506402
+  },
+  {
+    "text": "Add coordinate",
+    "center": "[611,1149]",
+    "key": 3506402
+  },
+  {
+    "text": "Reload fence",
+    "center": "[611,1389]",
+    "key": 3506402
+  },
+  {
+    "text": "Corner 1",
+    "center": "[348,1987]",
+    "key": 3506402
+  },
+  {
+    "text": "10.705, 122.5435",
+    "interactions": [
+      "focusable"
+    ],
+    "center": "[348,2155]",
+    "key": 3506402
+  },
+  {
+    "content-desc": "Edit corner 1",
+    "interactions": [
+      "clickable",
+      "focusable"
+    ],
+    "center": "[714,2095]",
+    "key": 3506402
+  },
+  {
+    "content-desc": "Remove corner 1",
+    "interactions": [
+      "clickable",
+      "focusable"
+    ],
+    "center": "[906,2095]",
+    "key": 3506402
+  },
+  {
+    "text": "Corner 2",
+    "center": "[348,2421]",
+    "key": 3506402
+  },
+  {
+    "text": "",
+    "center": "[230,1141]",
+    "key": 3506402
+  },
+  {
+    "text": "",
+    "center": "[270,1381]",
+    "key": 3506402
+  },
+  {
+    "text": "",
+    "center": "[714,2086]",
+    "key": 3506402
+  },
+  {
+    "text": "",
+    "center": "[906,2086]",
+    "key": 3506402
+  }
+]

@@ -1,0 +1,126 @@
+[
+  {
+    "text": "SYNTHETIC QA · live · no server writes",
+    "center": "[540,2303]",
+    "key": 3506402
+  },
+  {
+    "text": "Geofence setup",
+    "center": "[540,187]",
+    "key": 3506402
+  },
+  {
+    "content-desc": "Back to Setup",
+    "interactions": [
+      "clickable",
+      "focusable"
+    ],
+    "center": "[132,361]",
+    "key": 3506402
+  },
+  {
+    "content-desc": "Cancel",
+    "interactions": [
+      "clickable",
+      "focusable"
+    ],
+    "center": "[841,360]",
+    "key": 3506402
+  },
+  {
+    "interactions": [
+      "focusable",
+      "scrollable"
+    ],
+    "center": "[540,1469]",
+    "bounds": "[0,479][1080,2460]",
+    "key": 3506402
+  },
+  {
+    "text": "Cancel",
+    "center": "[841,360]",
+    "key": 3506402
+  },
+  {
+    "text": "",
+    "center": "[132,352]",
+    "key": 3506402
+  },
+  {
+    "content-desc": "Recenter fence and trackers",
+    "interactions": [
+      "clickable",
+      "focusable"
+    ],
+    "center": "[948,965]",
+    "key": 3506402
+  },
+  {
+    "content-desc": "Undo last vertex",
+    "interactions": [
+      "clickable",
+      "focusable"
+    ],
+    "center": "[948,1157]",
+    "key": 3506402
+  },
+  {
+    "text": "Tap to plot boundary · 4 corners",
+    "center": "[562,656]",
+    "key": 3506402
+  },
+  {
+    "content-desc": "Showing a Map created with MapLibre. Scroll by dragging two fingers. Zoom by pinching two fingers.",
+    "interactions": [
+      "clickable",
+      "focusable",
+      "long-clickable"
+    ],
+    "center": "[540,1386]",
+    "key": 3506402
+  },
+  {
+    "text": "© OpenStreetMap contributors · OpenFreeMap",
+    "center": "[588,1682]",
+    "key": 3506402
+  },
+  {
+    "text": "Draft · 4 vertices",
+    "center": "[445,1998]",
+    "key": 3506402
+  },
+  {
+    "text": "Polygon",
+    "center": "[338,2149]",
+    "key": 3506402
+  },
+  {
+    "text": "Valid polygon · no unsaved changes",
+    "center": "[540,2358]",
+    "key": 3506402
+  },
+  {
+    "content-desc": "Attribution icon. Activate to show attribution dialog.",
+    "interactions": [
+      "clickable",
+      "focusable"
+    ],
+    "center": "[79,1788]",
+    "key": 3506402
+  },
+  {
+    "text": "",
+    "center": "[948,956]",
+    "key": 3506402
+  },
+  {
+    "text": "",
+    "center": "[948,1148]",
+    "key": 3506402
+  },
+  {
+    "text": "",
+    "center": "[111,2140]",
+    "key": 3506402
+  }
+]

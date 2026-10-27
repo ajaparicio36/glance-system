@@ -58,4 +58,10 @@ function palette(dark: boolean): Record<string, string> {
   };
 }
 
-export const palettes = { light: palette(false), dark: palette(true) };
+export const palettes = { light: palette(false), dark: {
+  ...palette(true), background: '#000000', foreground: '#ffffff', card: '#090909',
+  popover: '#121212', primary: '#ffffff', 'primary-foreground': '#000000',
+  secondary: '#222222', muted: '#1d1d1d', 'muted-foreground': '#b5b5b5',
+  border: '#2b2b2b', input: '#333333', ring: '#b5b5b5',
+  'chart-1': '#ffaf0b', 'chart-2': '#2671f4', destructive: '#ff5b5b',
+} };

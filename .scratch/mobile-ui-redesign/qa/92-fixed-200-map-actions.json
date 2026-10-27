@@ -1,0 +1,160 @@
+[
+  {
+    "text": "SYNTHETIC QA · live · no server writes",
+    "center": "[540,2303]",
+    "key": 3506402
+  },
+  {
+    "content-desc": "Map",
+    "interactions": [
+      "clickable",
+      "focusable"
+    ],
+    "state": [
+      "selected"
+    ],
+    "center": "[283,2181]",
+    "key": 3506402
+  },
+  {
+    "content-desc": "Setup",
+    "interactions": [
+      "clickable",
+      "focusable"
+    ],
+    "center": "[764,2181]",
+    "key": 3506402
+  },
+  {
+    "text": "Map",
+    "center": "[355,2181]",
+    "key": 3506402
+  },
+  {
+    "text": "Setup",
+    "center": "[836,2181]",
+    "key": 3506402
+  },
+  {
+    "text": "",
+    "center": "[185,2172]",
+    "key": 3506402
+  },
+  {
+    "text": "",
+    "center": "[634,2172]",
+    "key": 3506402
+  },
+  {
+    "interactions": [
+      "focusable",
+      "scrollable"
+    ],
+    "center": "[540,1230]",
+    "bounds": "[0,0][1080,2460]",
+    "key": 3506402
+  },
+  {
+    "content-desc": "Refresh",
+    "interactions": [
+      "clickable",
+      "focusable"
+    ],
+    "center": "[540,1539]",
+    "key": 3506402
+  },
+  {
+    "content-desc": "History (7)",
+    "interactions": [
+      "clickable",
+      "focusable"
+    ],
+    "center": "[540,1779]",
+    "key": 3506402
+  },
+  {
+    "text": "Refresh",
+    "center": "[612,1538]",
+    "key": 3506402
+  },
+  {
+    "text": "History (7)",
+    "center": "[611,1778]",
+    "key": 3506402
+  },
+  {
+    "text": "Outside geofence",
+    "center": "[612,19]",
+    "key": 3506402
+  },
+  {
+    "text": "Last GPS coordinates",
+    "center": "[606,219]",
+    "key": 3506402
+  },
+  {
+    "text": "10.704800, 122.543800",
+    "interactions": [
+      "focusable"
+    ],
+    "center": "[540,447]",
+    "key": 3506402
+  },
+  {
+    "text": "Last seen · GPS observation",
+    "center": "[606,759]",
+    "key": 3506402
+  },
+  {
+    "text": "Oct 27, 2026, 4:27:08 PM GMT+8",
+    "interactions": [
+      "focusable"
+    ],
+    "center": "[540,987]",
+    "key": 3506402
+  },
+  {
+    "content-desc": "Timing details",
+    "interactions": [
+      "clickable",
+      "focusable"
+    ],
+    "center": "[540,1263]",
+    "key": 3506402
+  },
+  {
+    "text": "",
+    "center": "[375,1530]",
+    "key": 3506402
+  },
+  {
+    "text": "",
+    "center": "[331,1770]",
+    "key": 3506402
+  },
+  {
+    "text": "",
+    "center": "[159,13]",
+    "key": 3506402
+  },
+  {
+    "text": "",
+    "center": "[189,210]",
+    "key": 3506402
+  },
+  {
+    "text": "",
+    "center": "[189,750]",
+    "key": 3506402
+  },
+  {
+    "text": "Timing details",
+    "center": "[612,1262]",
+    "key": 3506402
+  },
+  {
+    "text": "",
+    "center": "[253,1254]",
+    "key": 3506402
+  }
+]

@@ -1,0 +1,447 @@
+[
+  {
+    "text": "SYNTHETIC QA · live · no server writes",
+    "center": "[540,2296]",
+    "key": 3506402
+  },
+  {
+    "interactions": [
+      "clickable"
+    ],
+    "center": "[540,1230]",
+    "key": 3506402
+  },
+  {
+    "interactions": [
+      "focusable",
+      "scrollable"
+    ],
+    "center": "[540,1383]",
+    "bounds": "[0,306][1080,2460]",
+    "key": 3506402
+  },
+  {
+    "content-desc": "Map",
+    "interactions": [
+      "clickable",
+      "focusable"
+    ],
+    "state": [
+      "selected"
+    ],
+    "center": "[346,2201]",
+    "key": 3506402
+  },
+  {
+    "content-desc": "Setup",
+    "interactions": [
+      "clickable",
+      "focusable"
+    ],
+    "center": "[711,2201]",
+    "key": 3506402
+  },
+  {
+    "text": "prototype-001",
+    "interactions": [
+      "focusable"
+    ],
+    "off-screen": true,
+    "key": 3506402
+  },
+  {
+    "text": "7 episodes in the current snapshot · page 2 of 2",
+    "center": "[540,354]",
+    "key": 3506402
+  },
+  {
+    "text": "Local times · Asia/Manila",
+    "center": "[540,450]",
+    "key": 3506402
+  },
+  {
+    "content-desc": "Previous",
+    "interactions": [
+      "clickable",
+      "focusable"
+    ],
+    "center": "[285,1820]",
+    "key": 3506402
+  },
+  {
+    "content-desc": "Next",
+    "interactions": [
+      "clickable",
+      "focusable"
+    ],
+    "center": "[795,1820]",
+    "key": 3506402
+  },
+  {
+    "text": "Page 2 of 2 · 2 of 7 episodes",
+    "center": "[540,1971]",
+    "key": 3506402
+  },
+  {
+    "text": "Server-recorded episodes, not a continuous GPS trail. Reconnection does not replay foreground alerts.",
+    "center": "[540,2161]",
+    "key": 3506402
+  },
+  {
+    "text": "",
+    "center": "[271,2201]",
+    "key": 3506402
+  },
+  {
+    "text": "Map",
+    "center": "[388,2201]",
+    "key": 3506402
+  },
+  {
+    "text": "",
+    "center": "[613,2201]",
+    "key": 3506402
+  },
+  {
+    "text": "Setup",
+    "center": "[753,2201]",
+    "key": 3506402
+  },
+  {
+    "content-desc": "Episode 2, Back inside fence",
+    "interactions": [
+      "clickable",
+      "focusable"
+    ],
+    "center": "[540,755]",
+    "key": 3506402
+  },
+  {
+    "content-desc": "Episode 1, Boundary updated",
+    "interactions": [
+      "clickable",
+      "focusable"
+    ],
+    "center": "[540,1359]",
+    "key": 3506402
+  },
+  {
+    "text": "",
+    "center": "[150,1821]",
+    "key": 3506402
+  },
+  {
+    "text": "Previous",
+    "center": "[326,1820]",
+    "key": 3506402
+  },
+  {
+    "text": "",
+    "center": "[715,1821]",
+    "key": 3506402
+  },
+  {
+    "text": "Next",
+    "center": "[837,1820]",
+    "key": 3506402
+  },
+  {
+    "text": "",
+    "center": "[129,615]",
+    "key": 3506402
+  },
+  {
+    "text": "Back inside fence",
+    "center": "[535,625]",
+    "key": 3506402
+  },
+  {
+    "text": "#2",
+    "center": "[946,620]",
+    "key": 3506402
+  },
+  {
+    "text": "Oct 27, 2026, 4:08:31 PM GMT+8",
+    "center": "[535,748]",
+    "key": 3506402
+  },
+  {
+    "text": "Show details",
+    "center": "[267,890]",
+    "key": 3506402
+  },
+  {
+    "text": "",
+    "center": "[954,891]",
+    "key": 3506402
+  },
+  {
+    "text": "",
+    "center": "[129,1106]",
+    "key": 3506402
+  },
+  {
+    "text": "Boundary updated",
+    "center": "[535,1116]",
+    "key": 3506402
+  },
+  {
+    "text": "#1",
+    "center": "[946,1111]",
+    "key": 3506402
+  },
+  {
+    "text": "Oct 27, 2026, 4:07:31 PM GMT+8",
+    "center": "[535,1239]",
+    "key": 3506402
+  },
+  {
+    "text": "Prior episode closed because the fence changed.",
+    "center": "[535,1428]",
+    "key": 3506402
+  },
+  {
+    "text": "Show details",
+    "center": "[267,1606]",
+    "key": 3506402
+  },
+  {
+    "text": "",
+    "center": "[954,1607]",
+    "key": 3506402
+  },
+  {
+    "interactions": [
+      "focusable",
+      "scrollable"
+    ],
+    "center": "[540,322]",
+    "bounds": "[48,144][1032,501]",
+    "key": 3506402
+  },
+  {
+    "content-desc": "Recenter fence and trackers",
+    "interactions": [
+      "clickable",
+      "focusable"
+    ],
+    "center": "[960,597]",
+    "key": 3506402
+  },
+  {
+    "content-desc": "Refresh server",
+    "interactions": [
+      "clickable",
+      "focusable"
+    ],
+    "center": "[960,765]",
+    "key": 3506402
+  },
+  {
+    "content-desc": "Showing a Map created with MapLibre. Scroll by dragging two fingers. Zoom by pinching two fingers.",
+    "interactions": [
+      "clickable",
+      "focusable",
+      "long-clickable"
+    ],
+    "center": "[540,1230]",
+    "key": 3506402
+  },
+  {
+    "text": "",
+    "center": "[960,597]",
+    "key": 3506402
+  },
+  {
+    "text": "© OpenStreetMap contributors · OpenFreeMap",
+    "center": "[588,864]",
+    "key": 3506402
+  },
+  {
+    "text": "",
+    "center": "[960,765]",
+    "key": 3506402
+  },
+  {
+    "interactions": [
+      "focusable",
+      "scrollable"
+    ],
+    "center": "[540,1372]",
+    "bounds": "[51,1000][1029,1745]",
+    "key": 3506402
+  },
+  {
+    "content-desc": "Refresh",
+    "interactions": [
+      "clickable",
+      "focusable"
+    ],
+    "center": "[310,1887]",
+    "key": 3506402
+  },
+  {
+    "content-desc": "History (7)",
+    "interactions": [
+      "clickable",
+      "focusable"
+    ],
+    "center": "[769,1887]",
+    "key": 3506402
+  },
+  {
+    "content-desc": "Attribution icon. Activate to show attribution dialog.",
+    "interactions": [
+      "clickable",
+      "focusable"
+    ],
+    "center": "[79,787]",
+    "key": 3506402
+  },
+  {
+    "text": "",
+    "center": "[188,1887]",
+    "key": 3506402
+  },
+  {
+    "text": "Refresh",
+    "center": "[352,1886]",
+    "key": 3506402
+  },
+  {
+    "text": "",
+    "center": "[642,1887]",
+    "key": 3506402
+  },
+  {
+    "text": "History (7)",
+    "center": "[811,1887]",
+    "key": 3506402
+  },
+  {
+    "text": "",
+    "center": "[117,213]",
+    "key": 3506402
+  },
+  {
+    "text": "Glance",
+    "center": "[288,212]",
+    "key": 3506402
+  },
+  {
+    "text": "Connected",
+    "center": "[851,206]",
+    "key": 3506402
+  },
+  {
+    "text": "prototype-001 · Outside geofence · 0s ago",
+    "center": "[562,403]",
+    "key": 3506402
+  },
+  {
+    "content-desc": "prototype-001",
+    "interactions": [
+      "clickable",
+      "focusable"
+    ],
+    "state": [
+      "selected"
+    ],
+    "off-screen": true,
+    "key": 3506402
+  },
+  {
+    "content-desc": "slave-02",
+    "interactions": [
+      "clickable",
+      "focusable"
+    ],
+    "off-screen": true,
+    "key": 3506402
+  },
+  {
+    "text": "prototype-001",
+    "off-screen": true,
+    "key": 3506402
+  },
+  {
+    "text": "Fence v10",
+    "off-screen": true,
+    "key": 3506402
+  },
+  {
+    "text": "",
+    "center": "[129,1018]",
+    "key": 3506402
+  },
+  {
+    "text": "Outside geofence",
+    "center": "[582,1023]",
+    "key": 3506402
+  },
+  {
+    "text": "",
+    "center": "[162,1155]",
+    "key": 3506402
+  },
+  {
+    "text": "Last GPS coordinates",
+    "center": "[493,1154]",
+    "key": 3506402
+  },
+  {
+    "text": "10.704800, 122.543800",
+    "interactions": [
+      "focusable"
+    ],
+    "center": "[540,1249]",
+    "key": 3506402
+  },
+  {
+    "text": "",
+    "center": "[162,1429]",
+    "key": 3506402
+  },
+  {
+    "text": "Last seen · GPS observation",
+    "center": "[575,1428]",
+    "key": 3506402
+  },
+  {
+    "text": "Oct 27, 2026, 4:14:31 PM GMT+8",
+    "interactions": [
+      "focusable"
+    ],
+    "center": "[540,1559]",
+    "key": 3506402
+  },
+  {
+    "content-desc": "Timing details",
+    "interactions": [
+      "clickable",
+      "focusable"
+    ],
+    "center": "[540,1723]",
+    "key": 3506402
+  },
+  {
+    "text": "prototype-001",
+    "off-screen": true,
+    "key": 3506402
+  },
+  {
+    "text": "slave-02",
+    "off-screen": true,
+    "key": 3506402
+  },
+  {
+    "text": "",
+    "off-screen": true,
+    "key": 3506402
+  },
+  {
+    "text": "Timing details",
+    "center": "[581,1744]",
+    "key": 3506402
+  }
+]

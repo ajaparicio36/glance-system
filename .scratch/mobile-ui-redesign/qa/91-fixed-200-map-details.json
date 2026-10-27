@@ -1,0 +1,201 @@
+[
+  {
+    "text": "SYNTHETIC QA · live · no server writes",
+    "center": "[540,2303]",
+    "key": 3506402
+  },
+  {
+    "content-desc": "Map",
+    "interactions": [
+      "clickable",
+      "focusable"
+    ],
+    "state": [
+      "selected"
+    ],
+    "center": "[283,2181]",
+    "key": 3506402
+  },
+  {
+    "content-desc": "Setup",
+    "interactions": [
+      "clickable",
+      "focusable"
+    ],
+    "center": "[764,2181]",
+    "key": 3506402
+  },
+  {
+    "text": "Map",
+    "center": "[355,2181]",
+    "key": 3506402
+  },
+  {
+    "text": "Setup",
+    "center": "[836,2181]",
+    "key": 3506402
+  },
+  {
+    "text": "",
+    "center": "[185,2172]",
+    "key": 3506402
+  },
+  {
+    "text": "",
+    "center": "[634,2172]",
+    "key": 3506402
+  },
+  {
+    "interactions": [
+      "focusable",
+      "scrollable"
+    ],
+    "center": "[540,1230]",
+    "bounds": "[0,0][1080,2460]",
+    "key": 3506402
+  },
+  {
+    "content-desc": "Refresh",
+    "interactions": [
+      "clickable",
+      "focusable"
+    ],
+    "center": "[540,2211]",
+    "key": 3506402
+  },
+  {
+    "content-desc": "History (7)",
+    "interactions": [
+      "clickable",
+      "focusable"
+    ],
+    "center": "[540,2404]",
+    "key": 3506402
+  },
+  {
+    "text": "Refresh",
+    "center": "[612,2210]",
+    "key": 3506402
+  },
+  {
+    "text": "History (7)",
+    "center": "[611,2429]",
+    "key": 3506402
+  },
+  {
+    "content-desc": "prototype-001",
+    "interactions": [
+      "clickable",
+      "focusable"
+    ],
+    "state": [
+      "selected"
+    ],
+    "center": "[540,26]",
+    "key": 3506402
+  },
+  {
+    "content-desc": "slave-02",
+    "interactions": [
+      "clickable",
+      "focusable"
+    ],
+    "center": "[540,182]",
+    "key": 3506402
+  },
+  {
+    "text": "prototype-001",
+    "center": "[444,368]",
+    "key": 3506402
+  },
+  {
+    "text": "Fence v10",
+    "center": "[310,510]",
+    "key": 3506402
+  },
+  {
+    "text": "Outside geofence",
+    "center": "[612,657]",
+    "key": 3506402
+  },
+  {
+    "text": "Last GPS coordinates",
+    "center": "[606,891]",
+    "key": 3506402
+  },
+  {
+    "text": "10.704800, 122.543800",
+    "interactions": [
+      "focusable"
+    ],
+    "center": "[540,1119]",
+    "key": 3506402
+  },
+  {
+    "text": "Last seen · GPS observation",
+    "center": "[606,1431]",
+    "key": 3506402
+  },
+  {
+    "text": "Oct 27, 2026, 4:27:08 PM GMT+8",
+    "interactions": [
+      "focusable"
+    ],
+    "center": "[540,1659]",
+    "key": 3506402
+  },
+  {
+    "content-desc": "Timing details",
+    "interactions": [
+      "clickable",
+      "focusable"
+    ],
+    "center": "[540,1935]",
+    "key": 3506402
+  },
+  {
+    "text": "",
+    "center": "[375,2202]",
+    "key": 3506402
+  },
+  {
+    "text": "",
+    "center": "[331,2425]",
+    "key": 3506402
+  },
+  {
+    "text": "prototype-001",
+    "center": "[540,5]",
+    "key": 3506402
+  },
+  {
+    "text": "slave-02",
+    "center": "[540,182]",
+    "key": 3506402
+  },
+  {
+    "text": "",
+    "center": "[159,648]",
+    "key": 3506402
+  },
+  {
+    "text": "",
+    "center": "[189,882]",
+    "key": 3506402
+  },
+  {
+    "text": "",
+    "center": "[189,1422]",
+    "key": 3506402
+  },
+  {
+    "text": "Timing details",
+    "center": "[612,1934]",
+    "key": 3506402
+  },
+  {
+    "text": "",
+    "center": "[253,1926]",
+    "key": 3506402
+  }
+]
